@@ -14,11 +14,11 @@ from .mocks import (
     create_tool_call_trace,
 )
 
-pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
-
 
 class TestBuildTranscript:
     """Tests for _build_transcript function."""
+
+    pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
 
     @pytest.mark.asyncio
     async def test_empty_spans_returns_none(self) -> None:
@@ -133,6 +133,8 @@ class TestBuildTranscript:
 class TestDatadogGenerator:
     """Tests for the datadog() async generator with mocked client."""
 
+    pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
+
     @pytest.mark.asyncio
     async def test_yields_transcripts(self) -> None:
         """datadog() yields transcripts from mocked API response."""
@@ -200,12 +202,17 @@ class TestDatadogGenerator:
 
         mock_client.aclose.assert_awaited_once()
 
+
+class TestStrictImport:
+    """Tests for DATADOG_STRICT_IMPORT env-var behaviour."""
+
     @pytest.mark.asyncio
+    @pytest.mark.parametrize("env_value", ["1", "true", "TRUE"])
     async def test_strict_import_propagates_trace_errors(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, env_value: str
     ) -> None:
-        """DATADOG_STRICT_IMPORT=1 re-raises per-trace processing errors."""
-        monkeypatch.setenv("DATADOG_STRICT_IMPORT", "1")
+        """DATADOG_STRICT_IMPORT re-raises per-trace processing errors."""
+        monkeypatch.setenv("DATADOG_STRICT_IMPORT", env_value)
 
         spans = [create_llm_span(span_id="s1", trace_id="t1")]
 
@@ -236,10 +243,18 @@ class TestDatadogGenerator:
     async def test_default_import_skips_trace_errors(
         self,
         monkeypatch: pytest.MonkeyPatch,
-        no_fallback_warnings: list[str],
     ) -> None:
         """Without DATADOG_STRICT_IMPORT, per-trace errors are logged and skipped."""
         monkeypatch.delenv("DATADOG_STRICT_IMPORT", raising=False)
+
+        warnings: list[str] = []
+
+        def _capture_warning(msg: str, *args: object, **kwargs: object) -> None:
+            warnings.append(msg % args if args else msg)
+
+        import inspect_scout.sources._datadog as datadog_pkg
+
+        monkeypatch.setattr(datadog_pkg.logger, "warning", _capture_warning)
 
         spans = [
             create_llm_span(span_id="s1", trace_id="t1"),
@@ -270,5 +285,4 @@ class TestDatadogGenerator:
                 results.append(t)
 
         assert results == []
-        assert len(no_fallback_warnings) == 2
-        no_fallback_warnings.clear()
+        assert len(warnings) == 2
