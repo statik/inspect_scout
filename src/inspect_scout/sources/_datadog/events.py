@@ -97,7 +97,7 @@ async def to_model_event(span: dict[str, Any]) -> ModelEvent:
         output=output,
         timestamp=_get_timestamp(span),
         completed=_get_end_timestamp(span),
-        span_id=span.get("parent_id", ""),
+        span_id=span.get("parent_id") or "",
     )
 
 
@@ -154,7 +154,7 @@ def to_tool_event(span: dict[str, Any]) -> ToolEvent:
         timestamp=_get_timestamp(span),
         completed=_get_end_timestamp(span),
         error=error,
-        span_id=span.get("parent_id", ""),
+        span_id=span.get("parent_id") or "",
     )
 
 
@@ -172,7 +172,7 @@ def to_span_begin_event(span: dict[str, Any]) -> SpanBeginEvent:
     return SpanBeginEvent(
         id=str(span.get("span_id", "")),
         name=str(name),
-        parent_id=span.get("parent_id", ""),
+        parent_id=span.get("parent_id") or "",
         timestamp=_get_timestamp(span),
         working_start=0.0,
     )
