@@ -2,7 +2,7 @@
 
 from datetime import datetime, timezone
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
@@ -162,9 +162,11 @@ class TestRetryApiCallAsync:
         )
 
         func = AsyncMock(side_effect=[error, {"data": []}])
-        result = await retry_api_call_async(func)
+        with patch("asyncio.sleep") as mock_sleep:
+            result = await retry_api_call_async(func)
         assert result == {"data": []}
         assert func.await_count == 2
+        mock_sleep.assert_awaited_once_with(1.0)
 
     @pytest.mark.asyncio
     async def test_retries_on_429_with_retry_after_zero(self) -> None:
@@ -179,9 +181,11 @@ class TestRetryApiCallAsync:
         )
 
         func = AsyncMock(side_effect=[error, {"data": []}])
-        result = await retry_api_call_async(func)
+        with patch("asyncio.sleep") as mock_sleep:
+            result = await retry_api_call_async(func)
         assert result == {"data": []}
         assert func.await_count == 2
+        mock_sleep.assert_awaited_once_with(0.0)
 
     @pytest.mark.asyncio
     async def test_non_retryable_error_raises_immediately(self) -> None:
