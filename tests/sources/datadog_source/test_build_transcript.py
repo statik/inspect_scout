@@ -269,8 +269,6 @@ class TestDatadogGenerator:
 class TestStrictImport:
     """Tests for DATADOG_STRICT_IMPORT env-var behaviour."""
 
-    pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
-
     @pytest.mark.asyncio
     @pytest.mark.parametrize("env_value", ["1", "true", "TRUE"])
     async def test_strict_import_propagates_trace_errors(

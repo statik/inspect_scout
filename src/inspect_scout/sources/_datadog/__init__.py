@@ -66,7 +66,10 @@ async def datadog(
         span_kind: Filter by span kind (llm, tool, agent, etc.)
         span_name: Filter by span name
         tags: Additional tag filters (``key:value`` format)
-        limit: Maximum number of transcripts to fetch
+        limit: Maximum number of transcripts to yield. Note: all
+            matching spans are fetched from the API first, then grouped
+            into traces; this parameter truncates the output, not the
+            API request.
         api_key: Datadog API key (or ``DD_API_KEY`` env var)
         app_key: Datadog application key (or ``DD_APP_KEY`` env var)
         site: Datadog site (or ``DD_SITE`` env var, defaults to

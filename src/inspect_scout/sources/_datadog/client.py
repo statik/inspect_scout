@@ -7,6 +7,7 @@ with httpx for HTTP calls. No SDK dependency required.
 import os
 from dataclasses import dataclass
 from datetime import datetime
+from functools import partial
 from logging import getLogger
 from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
@@ -46,6 +47,19 @@ class DatadogClient:
 
     http: "httpx.AsyncClient"
     site: str
+
+    async def _fetch_page(self, params: dict[str, Any]) -> Any:
+        """Fetch a single page from the Export API.
+
+        Args:
+            params: Query parameters for this page request
+
+        Returns:
+            Parsed JSON response
+        """
+        response = await self.http.get(_EXPORT_PATH, params=params)
+        response.raise_for_status()
+        return response.json()
 
     async def list_spans(
         self,
@@ -99,12 +113,9 @@ class DatadogClient:
             if cursor:
                 page_params["page[cursor]"] = cursor
 
-            async def _fetch(p: dict[str, Any] = page_params) -> Any:
-                response = await self.http.get(_EXPORT_PATH, params=p)
-                response.raise_for_status()
-                return response.json()
-
-            result = await retry_api_call_async(_fetch)
+            result = await retry_api_call_async(
+                partial(self._fetch_page, page_params)
+            )
 
             data = result.get("data", [])
             for item in data:
