@@ -395,6 +395,7 @@ class TestExtractInputMessagesGoogle:
 
         assert len(messages) >= 1
         assert any(m.role == "user" for m in messages)
+        assert any(m.role == "assistant" for m in messages)
 
 
 class TestExtractSystemText:

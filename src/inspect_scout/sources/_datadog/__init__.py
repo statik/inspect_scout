@@ -213,8 +213,7 @@ async def _build_transcript(
 
     if not messages:
         root_span = ordered_spans[0]
-        if root_span:
-            messages = _extract_root_messages(root_span)
+        messages = _extract_root_messages(root_span)
 
     apply_ids = stable_message_ids()
     for event in events:
