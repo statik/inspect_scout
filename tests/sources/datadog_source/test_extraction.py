@@ -233,6 +233,8 @@ class TestNormalizeMessages:
         [
             ([1, 2, 3], "[1, 2, 3]"),
             (42, "42"),
+            # Note: bool is a subtype of int in Python (isinstance(True, int)
+            # is True), so branch ordering in _normalize_messages matters.
             (True, "true"),
         ],
         ids=["list", "int", "bool"],
