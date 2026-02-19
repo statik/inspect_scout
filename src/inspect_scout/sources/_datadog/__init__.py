@@ -66,10 +66,11 @@ async def datadog(
         span_kind: Filter by span kind (llm, tool, agent, etc.)
         span_name: Filter by span name
         tags: Additional tag filters (``key:value`` format)
-        limit: Maximum number of transcripts to yield. Spans are
-            fetched page-by-page until enough are collected; this
-            parameter limits the traces yielded, not the per-page API
-            fetch size.
+        limit: Maximum number of transcripts to yield. All matching
+            spans are fetched eagerly (with a heuristic cap based on
+            the limit), then grouped into traces. This parameter
+            limits the traces yielded, not the per-page API fetch
+            size.
         api_key: Datadog API key (or ``DD_API_KEY`` env var)
         app_key: Datadog application key (or ``DD_APP_KEY`` env var)
         site: Datadog site (or ``DD_SITE`` env var, defaults to
@@ -133,6 +134,7 @@ async def _from_query(
     Yields:
         Transcript objects
     """
+    span_limit = min(limit * 50, 10_000) if limit else None
     all_spans = await client.list_spans(
         ml_app=ml_app,
         from_time=from_time,
@@ -141,6 +143,7 @@ async def _from_query(
         span_kind=span_kind,
         span_name=span_name,
         tags=tags,
+        limit=span_limit,
     )
 
     traces: dict[str, list[dict[str, Any]]] = defaultdict(list)
@@ -199,7 +202,7 @@ async def _build_transcript(
         if model_events:
             best_model = max(model_events, key=lambda e: len(e.input))
             messages = list(best_model.input)
-            if best_model.output and best_model.output.message:
+            if best_model.output and not best_model.output.empty:
                 messages.append(best_model.output.message)
 
     if not messages:
@@ -265,14 +268,14 @@ async def _build_transcript(
     )
 
 
-def _root_duration(root_span: dict[str, Any]) -> float:
+def _root_duration(root_span: dict[str, Any]) -> float | None:
     """Get the root span's duration in seconds.
 
     Args:
         root_span: Root span dictionary
 
     Returns:
-        Duration in seconds, or 0.0 if unavailable
+        Duration in seconds, or None if unavailable
     """
     duration = root_span.get("duration")
     if duration is not None:
@@ -280,7 +283,7 @@ def _root_duration(root_span: dict[str, Any]) -> float:
             return int(duration) / 1e9
         except (ValueError, TypeError):
             pass
-    return 0.0
+    return None
 
 
 def _get_ml_app_from_tags(span: dict[str, Any]) -> str | None:
@@ -350,9 +353,13 @@ def _extract_metadata(span: dict[str, Any]) -> dict[str, Any]:
         metadata["tags"] = tags
 
     span_metadata = meta.get("metadata") or {}
-    for key in ["agent", "agent_args", "score", "success"]:
+    for key in ["agent", "agent_args", "score"]:
         if key in span_metadata:
             metadata[key] = span_metadata[key]
+
+    if "success" in span_metadata:
+        val = span_metadata["success"]
+        metadata["success"] = bool(val) if val is not None else None
 
     evaluations = meta.get("evaluations")
     if evaluations:

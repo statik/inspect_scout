@@ -6,8 +6,12 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from inspect_scout.sources._datadog import (
     _build_transcript,
+    _extract_metadata,
     _extract_model_options,
+    _extract_root_messages,
     _from_query,
+    _get_ml_app_from_tags,
+    _root_duration,
     datadog,
 )
 from inspect_scout.sources._datadog.client import DATADOG_SOURCE_TYPE
@@ -352,3 +356,197 @@ class TestStrictImport:
 
         assert results == []
         assert len(warnings) == 2
+
+
+class TestExtractRootMessages:
+    """Tests for _extract_root_messages function."""
+
+    def test_extracts_input_and_output(self) -> None:
+        """Extract user and assistant messages from root span."""
+        span: dict[str, Any] = {
+            "meta": {
+                "input": {"value": "Hello"},
+                "output": {"value": "Hi there!"},
+            },
+        }
+        messages = _extract_root_messages(span)
+        assert len(messages) == 2
+        assert messages[0].content == "Hello"
+        assert messages[1].content == "Hi there!"
+
+    def test_input_only(self) -> None:
+        """Extract only input when output is missing."""
+        span: dict[str, Any] = {
+            "meta": {
+                "input": {"value": "Hello"},
+                "output": {},
+            },
+        }
+        messages = _extract_root_messages(span)
+        assert len(messages) == 1
+        assert messages[0].content == "Hello"
+
+    def test_empty_meta(self) -> None:
+        """Return empty list when meta has no input/output."""
+        span: dict[str, Any] = {"meta": {}}
+        messages = _extract_root_messages(span)
+        assert messages == []
+
+    def test_no_meta_key(self) -> None:
+        """Return empty list when span has no meta."""
+        span: dict[str, Any] = {}
+        messages = _extract_root_messages(span)
+        assert messages == []
+
+
+class TestRootDuration:
+    """Tests for _root_duration function."""
+
+    def test_valid_duration(self) -> None:
+        """Convert nanosecond duration to seconds."""
+        span: dict[str, Any] = {"duration": 5_000_000_000}
+        assert _root_duration(span) == pytest.approx(5.0)
+
+    def test_missing_duration_returns_none(self) -> None:
+        """Return None when duration key is absent."""
+        span: dict[str, Any] = {}
+        assert _root_duration(span) is None
+
+    def test_none_duration_returns_none(self) -> None:
+        """Return None when duration is explicitly None."""
+        span: dict[str, Any] = {"duration": None}
+        assert _root_duration(span) is None
+
+    def test_invalid_duration_returns_none(self) -> None:
+        """Return None when duration is not convertible to int."""
+        span: dict[str, Any] = {"duration": "not-a-number"}
+        assert _root_duration(span) is None
+
+
+class TestGetMlAppFromTags:
+    """Tests for _get_ml_app_from_tags function."""
+
+    def test_extracts_ml_app(self) -> None:
+        """Extract ml_app value from tag list."""
+        span: dict[str, Any] = {"tags": ["ml_app:my-app", "env:prod"]}
+        assert _get_ml_app_from_tags(span) == "my-app"
+
+    def test_no_ml_app_tag(self) -> None:
+        """Return None when no ml_app tag exists."""
+        span: dict[str, Any] = {"tags": ["env:prod"]}
+        assert _get_ml_app_from_tags(span) is None
+
+    def test_no_tags_key(self) -> None:
+        """Return None when tags key is absent."""
+        span: dict[str, Any] = {}
+        assert _get_ml_app_from_tags(span) is None
+
+    def test_dict_tags_returns_none(self) -> None:
+        """Return None when tags is a dict instead of a list."""
+        span: dict[str, Any] = {"tags": {"ml_app": "my-app"}}
+        assert _get_ml_app_from_tags(span) is None
+
+    def test_non_string_tag_skipped(self) -> None:
+        """Skip non-string entries in tags list."""
+        span: dict[str, Any] = {"tags": [123, "ml_app:found"]}
+        assert _get_ml_app_from_tags(span) == "found"
+
+
+class TestExtractMetadataSuccess:
+    """Tests for success field validation in _extract_metadata."""
+
+    def test_bool_success_preserved(self) -> None:
+        """Boolean success values are preserved."""
+        span: dict[str, Any] = {
+            "meta": {"metadata": {"success": True}},
+            "tags": [],
+        }
+        metadata = _extract_metadata(span)
+        assert metadata["success"] is True
+
+    def test_string_success_coerced_to_bool(self) -> None:
+        """String 'true' is coerced to bool True."""
+        span: dict[str, Any] = {
+            "meta": {"metadata": {"success": "true"}},
+            "tags": [],
+        }
+        metadata = _extract_metadata(span)
+        assert metadata["success"] is True
+
+    def test_int_success_coerced_to_bool(self) -> None:
+        """Integer 1 is coerced to bool True."""
+        span: dict[str, Any] = {
+            "meta": {"metadata": {"success": 1}},
+            "tags": [],
+        }
+        metadata = _extract_metadata(span)
+        assert metadata["success"] is True
+
+    def test_zero_success_coerced_to_false(self) -> None:
+        """Integer 0 is coerced to bool False."""
+        span: dict[str, Any] = {
+            "meta": {"metadata": {"success": 0}},
+            "tags": [],
+        }
+        metadata = _extract_metadata(span)
+        assert metadata["success"] is False
+
+    def test_none_success_preserved(self) -> None:
+        """None success value is preserved."""
+        span: dict[str, Any] = {
+            "meta": {"metadata": {"success": None}},
+            "tags": [],
+        }
+        metadata = _extract_metadata(span)
+        assert metadata["success"] is None
+
+
+class TestFromQueryForwardsLimit:
+    """Tests that _from_query forwards a span limit to list_spans."""
+
+    pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
+
+    @pytest.mark.asyncio
+    async def test_limit_forwarded_to_list_spans(self) -> None:
+        """_from_query passes heuristic span limit to client.list_spans."""
+        mock_client = AsyncMock()
+        mock_client.list_spans = AsyncMock(return_value=[])
+        mock_client.site = "datadoghq.com"
+
+        async for _ in _from_query(
+            mock_client, "app", None, None, None, None, None, None, 5
+        ):
+            pass
+
+        call_kwargs = mock_client.list_spans.call_args.kwargs
+        assert call_kwargs["limit"] == 250  # 5 * 50
+
+    @pytest.mark.asyncio
+    async def test_limit_capped_at_10000(self) -> None:
+        """Span limit is capped at 10,000."""
+        mock_client = AsyncMock()
+        mock_client.list_spans = AsyncMock(return_value=[])
+        mock_client.site = "datadoghq.com"
+
+        async for _ in _from_query(
+            mock_client, "app", None, None, None, None, None, None, 500
+        ):
+            pass
+
+        call_kwargs = mock_client.list_spans.call_args.kwargs
+        assert call_kwargs["limit"] == 10_000
+
+    @pytest.mark.asyncio
+    async def test_no_limit_passes_none(self) -> None:
+        """No limit passes None to list_spans."""
+        mock_client = AsyncMock()
+        mock_client.list_spans = AsyncMock(return_value=[])
+        mock_client.site = "datadoghq.com"
+
+        async for _ in _from_query(
+            mock_client, "app", None, None, None, None, None, None, None
+        ):
+            pass
+
+        call_kwargs = mock_client.list_spans.call_args.kwargs
+        assert call_kwargs["limit"] is None

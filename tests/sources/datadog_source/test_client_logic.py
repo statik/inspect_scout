@@ -8,6 +8,7 @@ import httpx
 import pytest
 from inspect_scout.sources._datadog.client import (
     DatadogClient,
+    _get_retry_after,
     _is_rate_limit_error,
     _is_retryable_error,
     retry_api_call_async,
@@ -82,6 +83,48 @@ class TestIsRateLimitError:
             "server error", request=response.request, response=response
         )
         assert _is_rate_limit_error(exc) is False
+
+
+class TestGetRetryAfter:
+    """Tests for _get_retry_after function."""
+
+    def test_extracts_retry_after_header(self) -> None:
+        """Extract Retry-After seconds from response header."""
+        response = httpx.Response(
+            429,
+            request=httpx.Request("GET", "https://x"),
+            headers={"Retry-After": "30"},
+        )
+        exc = httpx.HTTPStatusError(
+            "rate limited", request=response.request, response=response
+        )
+        assert _get_retry_after(exc) == 30.0
+
+    def test_returns_none_without_header(self) -> None:
+        """Return None when Retry-After header is missing."""
+        response = httpx.Response(
+            429, request=httpx.Request("GET", "https://x")
+        )
+        exc = httpx.HTTPStatusError(
+            "rate limited", request=response.request, response=response
+        )
+        assert _get_retry_after(exc) is None
+
+    def test_returns_none_for_non_numeric_header(self) -> None:
+        """Return None when Retry-After header is not numeric."""
+        response = httpx.Response(
+            429,
+            request=httpx.Request("GET", "https://x"),
+            headers={"Retry-After": "Wed, 21 Oct 2025 07:28:00 GMT"},
+        )
+        exc = httpx.HTTPStatusError(
+            "rate limited", request=response.request, response=response
+        )
+        assert _get_retry_after(exc) is None
+
+    def test_returns_none_for_non_http_error(self) -> None:
+        """Return None for non-HTTP exceptions."""
+        assert _get_retry_after(ValueError("bad")) is None
 
 
 class TestRetryApiCallAsync:
