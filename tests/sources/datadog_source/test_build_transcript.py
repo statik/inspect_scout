@@ -180,6 +180,7 @@ class TestDatadogGenerator:
                 transcripts.append(t)
 
         assert len(transcripts) == 2
+        mock_client.aclose.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_api_error_propagates(self) -> None:
