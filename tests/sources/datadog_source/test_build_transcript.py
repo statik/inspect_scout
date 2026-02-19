@@ -473,6 +473,24 @@ class TestExtractMetadataSuccess:
         metadata = _extract_metadata(span)
         assert metadata["success"] is True
 
+    def test_string_false_coerced_to_false(self) -> None:
+        """String 'false' is coerced to bool False."""
+        span: dict[str, Any] = {
+            "meta": {"metadata": {"success": "false"}},
+            "tags": [],
+        }
+        metadata = _extract_metadata(span)
+        assert metadata["success"] is False
+
+    def test_string_False_coerced_to_false(self) -> None:
+        """String 'False' is coerced to bool False."""
+        span: dict[str, Any] = {
+            "meta": {"metadata": {"success": "False"}},
+            "tags": [],
+        }
+        metadata = _extract_metadata(span)
+        assert metadata["success"] is False
+
     def test_int_success_coerced_to_bool(self) -> None:
         """Integer 1 is coerced to bool True."""
         span: dict[str, Any] = {

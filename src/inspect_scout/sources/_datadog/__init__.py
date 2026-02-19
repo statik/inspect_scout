@@ -134,7 +134,7 @@ async def _from_query(
     Yields:
         Transcript objects
     """
-    span_limit = min(limit * 50, 10_000) if limit else None
+    span_limit = min(limit * 50, 10_000) if limit is not None else None
     all_spans = await client.list_spans(
         ml_app=ml_app,
         from_time=from_time,
@@ -359,7 +359,12 @@ def _extract_metadata(span: dict[str, Any]) -> dict[str, Any]:
 
     if "success" in span_metadata:
         val = span_metadata["success"]
-        metadata["success"] = bool(val) if val is not None else None
+        if val is None:
+            metadata["success"] = None
+        elif isinstance(val, str):
+            metadata["success"] = val.lower() not in ("false", "0", "no", "")
+        else:
+            metadata["success"] = bool(val)
 
     evaluations = meta.get("evaluations")
     if evaluations:
