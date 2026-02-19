@@ -81,7 +81,9 @@ async def _convert_messages(
                 system_message=system_text,
             )
         except Exception:
-            logger.debug("messages_from_anthropic failed, using OpenAI converter")
+            logger.warning(
+                "messages_from_anthropic failed, using OpenAI converter", exc_info=True
+            )
 
     if provider == Provider.GOOGLE:
         try:
@@ -91,8 +93,9 @@ async def _convert_messages(
             # Normalized dicts match OpenAI format at runtime; see note above.
             return await messages_from_openai(normalized)  # type: ignore[arg-type]
         except Exception:
-            logger.debug(
-                "messages_from_openai failed for Google, using simple conversion"
+            logger.warning(
+                "messages_from_openai failed for Google, using simple conversion",
+                exc_info=True,
             )
 
     try:
@@ -102,7 +105,9 @@ async def _convert_messages(
         # Normalized dicts match OpenAI format at runtime; see note above.
         return await messages_from_openai(normalized)  # type: ignore[arg-type]
     except Exception:
-        logger.debug("messages_from_openai failed, using simple conversion")
+        logger.warning(
+            "messages_from_openai failed, using simple conversion", exc_info=True
+        )
 
     return _simple_message_conversion(messages)
 
@@ -412,7 +417,11 @@ def sum_tokens(spans: list[dict[str, Any]]) -> int:
     total = 0
     for span in spans:
         metrics = span.get("metrics") or {}
-        input_t = metrics.get("input_tokens") or 0
-        output_t = metrics.get("output_tokens") or 0
-        total += int(input_t) + int(output_t)
+        total_t = metrics.get("total_tokens")
+        if total_t is not None:
+            total += int(total_t)
+        else:
+            input_t = metrics.get("input_tokens") or 0
+            output_t = metrics.get("output_tokens") or 0
+            total += int(input_t) + int(output_t)
     return total

@@ -31,7 +31,7 @@ from .client import (
     DatadogClient,
     get_datadog_client,
 )
-from .detection import detect_provider, get_model_name
+from .detection import Provider, detect_provider, get_model_name
 from .events import spans_to_events
 from .extraction import sum_tokens
 from .tree import build_span_tree, flatten_tree_chronological, get_llm_spans
@@ -345,7 +345,7 @@ def _extract_metadata(span: dict[str, Any]) -> dict[str, Any]:
     metadata: dict[str, Any] = {}
 
     provider = detect_provider(span)
-    if provider.value != "unknown":
+    if provider != Provider.UNKNOWN:
         metadata["provider"] = provider.value
 
     meta = span.get("meta") or {}

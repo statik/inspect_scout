@@ -4,9 +4,11 @@ from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
-from inspect_scout.sources._datadog.client import (
+
+httpx = pytest.importorskip("httpx")
+
+from inspect_scout.sources._datadog.client import (  # noqa: E402
     DatadogClient,
     _get_retry_after,
     _is_rate_limit_error,
@@ -330,9 +332,7 @@ class TestPagination:
         mock_response_1.json.return_value = page1
         mock_response_1.raise_for_status = MagicMock()
 
-        error_response = httpx.Response(
-            500, request=httpx.Request("GET", "https://x")
-        )
+        error_response = httpx.Response(500, request=httpx.Request("GET", "https://x"))
         server_error = httpx.HTTPStatusError(
             "server error",
             request=error_response.request,
