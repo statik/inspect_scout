@@ -113,9 +113,7 @@ class DatadogClient:
             if cursor:
                 page_params["page[cursor]"] = cursor
 
-            result = await retry_api_call_async(
-                partial(self._fetch_page, page_params)
-            )
+            result = await retry_api_call_async(partial(self._fetch_page, page_params))
 
             data = result.get("data", [])
             for item in data:
@@ -293,7 +291,7 @@ async def retry_api_call_async(func: Callable[[], Any]) -> Any:
 
         if exc and _is_rate_limit_error(exc):
             retry_after = _get_retry_after(exc)
-            if retry_after:
+            if retry_after is not None:
                 wait_time = min(retry_after, float(RATE_LIMIT_MAX_WAIT))
                 logger.info("Rate limit: waiting %ss per Retry-After header", wait_time)
                 return wait_time

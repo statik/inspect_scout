@@ -31,7 +31,7 @@ from .client import (
     DatadogClient,
     get_datadog_client,
 )
-from .detection import detect_provider
+from .detection import detect_provider, get_model_name
 from .events import spans_to_events
 from .extraction import sum_tokens
 from .tree import build_span_tree, flatten_tree_chronological, get_llm_spans
@@ -218,7 +218,7 @@ async def _build_transcript(
             apply_ids(event)
     apply_ids(messages)
 
-    model_name = str(llm_spans[0].get("model_name", "unknown")) if llm_spans else None
+    model_name = get_model_name(llm_spans[0]) if llm_spans else None
 
     root_span = ordered_spans[0] if ordered_spans else {}
     root_name = root_span.get("name") or "trace"

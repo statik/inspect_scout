@@ -19,7 +19,7 @@ from inspect_ai.model._chat_message import (
 from inspect_ai.model._model_output import ChatCompletionChoice, ModelUsage
 from inspect_ai.tool import ToolCall, ToolInfo, ToolParams
 
-from .detection import Provider
+from .detection import Provider, get_model_name
 
 logger = getLogger(__name__)
 
@@ -220,7 +220,7 @@ async def extract_output(span: dict[str, Any]) -> ModelOutput:
     """
     meta = span.get("meta") or {}
     output_data = meta.get("output") or {}
-    model_name = span.get("model_name") or "unknown"
+    model_name = get_model_name(span) or "unknown"
 
     messages_raw = output_data.get("messages")
     if messages_raw and isinstance(messages_raw, list):

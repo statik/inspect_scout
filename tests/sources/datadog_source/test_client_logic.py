@@ -102,9 +102,7 @@ class TestGetRetryAfter:
 
     def test_returns_none_without_header(self) -> None:
         """Return None when Retry-After header is missing."""
-        response = httpx.Response(
-            429, request=httpx.Request("GET", "https://x")
-        )
+        response = httpx.Response(429, request=httpx.Request("GET", "https://x"))
         exc = httpx.HTTPStatusError(
             "rate limited", request=response.request, response=response
         )
@@ -144,6 +142,40 @@ class TestRetryApiCallAsync:
         response = httpx.Response(500, request=httpx.Request("GET", "https://x"))
         error = httpx.HTTPStatusError(
             "server error", request=response.request, response=response
+        )
+
+        func = AsyncMock(side_effect=[error, {"data": []}])
+        result = await retry_api_call_async(func)
+        assert result == {"data": []}
+        assert func.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_retries_on_429_with_retry_after_header(self) -> None:
+        """Retry on 429 and respect the Retry-After header."""
+        response = httpx.Response(
+            429,
+            request=httpx.Request("GET", "https://x"),
+            headers={"Retry-After": "1"},
+        )
+        error = httpx.HTTPStatusError(
+            "rate limited", request=response.request, response=response
+        )
+
+        func = AsyncMock(side_effect=[error, {"data": []}])
+        result = await retry_api_call_async(func)
+        assert result == {"data": []}
+        assert func.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_retries_on_429_with_retry_after_zero(self) -> None:
+        """Retry on 429 with Retry-After: 0 (immediate retry)."""
+        response = httpx.Response(
+            429,
+            request=httpx.Request("GET", "https://x"),
+            headers={"Retry-After": "0"},
+        )
+        error = httpx.HTTPStatusError(
+            "rate limited", request=response.request, response=response
         )
 
         func = AsyncMock(side_effect=[error, {"data": []}])

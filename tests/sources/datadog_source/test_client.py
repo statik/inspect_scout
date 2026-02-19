@@ -34,7 +34,7 @@ class TestGetDatadogClient:
             get_datadog_client(api_key="test-api-key")
 
     def test_client_created_with_keys(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Create client successfully with explicit keys."""
+        """Create client with correct headers and base URL."""
         monkeypatch.delenv("DD_API_KEY", raising=False)
         monkeypatch.delenv("DD_APP_KEY", raising=False)
         monkeypatch.delenv("DD_SITE", raising=False)
@@ -46,6 +46,9 @@ class TestGetDatadogClient:
         )
 
         assert client.site == "datadoghq.eu"
+        assert str(client.http.base_url) == "https://api.datadoghq.eu"
+        assert client.http.headers["DD-API-KEY"] == "test-api-key"
+        assert client.http.headers["DD-APPLICATION-KEY"] == "test-app-key"
 
     def test_default_site(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Default site is datadoghq.com."""
