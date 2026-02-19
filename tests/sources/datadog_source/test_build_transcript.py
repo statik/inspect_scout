@@ -206,6 +206,8 @@ class TestDatadogGenerator:
 class TestStrictImport:
     """Tests for DATADOG_STRICT_IMPORT env-var behaviour."""
 
+    pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize("env_value", ["1", "true", "TRUE"])
     async def test_strict_import_propagates_trace_errors(
@@ -253,8 +255,10 @@ class TestStrictImport:
             warnings.append(msg % args if args else msg)
 
         import inspect_scout.sources._datadog as datadog_pkg
+        import inspect_scout.sources._datadog.extraction as datadog_extraction
 
         monkeypatch.setattr(datadog_pkg.logger, "warning", _capture_warning)
+        monkeypatch.setattr(datadog_extraction.logger, "warning", _capture_warning)
 
         spans = [
             create_llm_span(span_id="s1", trace_id="t1"),
