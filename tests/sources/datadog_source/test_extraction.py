@@ -3,6 +3,7 @@
 import pytest
 from inspect_scout.sources._datadog.detection import Provider
 from inspect_scout.sources._datadog.extraction import (
+    _extract_system_text,
     _extract_tool_calls,
     _normalize_messages,
     _parse_tool_schema,
@@ -374,3 +375,78 @@ class TestExtractToolCalls:
         result = _extract_tool_calls(data)
 
         assert len(result) == 0
+
+
+class TestExtractInputMessagesGoogle:
+    """Tests for Google provider message conversion path."""
+
+    @pytest.mark.asyncio
+    async def test_extract_google_messages(self) -> None:
+        """Google provider normalizes 'model' role and routes through OpenAI converter."""
+        span = create_llm_span(
+            model_provider="google",
+            model_name="gemini-1.5-pro",
+            input_messages=[
+                {"role": "user", "content": "Hello"},
+                {"role": "model", "content": "Hi there"},
+            ],
+        )
+        messages = await extract_input_messages(span, Provider.GOOGLE)
+
+        assert len(messages) >= 1
+        assert any(m.role == "user" for m in messages)
+
+
+class TestExtractSystemText:
+    """Tests for _extract_system_text with different content formats."""
+
+    def test_string_content(self) -> None:
+        """Extract system text from string content."""
+        messages = [{"role": "system", "content": "Be helpful."}]
+        assert _extract_system_text(messages) == "Be helpful."
+
+    def test_list_of_text_blocks(self) -> None:
+        """Extract system text from list of text block dicts."""
+        messages = [
+            {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": "Be helpful."},
+                    {"type": "text", "text": "Be concise."},
+                ],
+            }
+        ]
+        assert _extract_system_text(messages) == "Be helpful. Be concise."
+
+    def test_list_of_plain_strings(self) -> None:
+        """Extract system text from list of plain strings."""
+        messages = [
+            {
+                "role": "system",
+                "content": ["Be helpful.", "Be concise."],
+            }
+        ]
+        assert _extract_system_text(messages) == "Be helpful. Be concise."
+
+    def test_mixed_list_content(self) -> None:
+        """Extract system text from mixed list of blocks and strings."""
+        messages = [
+            {
+                "role": "system",
+                "content": [
+                    {"type": "text", "text": "First."},
+                    "Second.",
+                ],
+            }
+        ]
+        assert _extract_system_text(messages) == "First. Second."
+
+    def test_no_system_message(self) -> None:
+        """Return None when no system message exists."""
+        messages = [{"role": "user", "content": "Hello"}]
+        assert _extract_system_text(messages) is None
+
+    def test_empty_list_content(self) -> None:
+        """Return None for empty list content."""
+        messages = [{"role": "system", "content": []}]
+        assert _extract_system_text(messages) is None

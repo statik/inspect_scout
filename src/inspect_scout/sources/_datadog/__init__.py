@@ -212,7 +212,7 @@ async def _build_transcript(
                 messages.append(best_model.output.message)
 
     if not messages:
-        root_span = ordered_spans[0] if ordered_spans else None
+        root_span = ordered_spans[0]
         if root_span:
             messages = _extract_root_messages(root_span)
 
@@ -224,7 +224,7 @@ async def _build_transcript(
 
     model_name = get_model_name(llm_spans[0]) if llm_spans else None
 
-    root_span = ordered_spans[0] if ordered_spans else {}
+    root_span = ordered_spans[0]
     root_name = root_span.get("name") or "trace"
 
     date = None

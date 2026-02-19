@@ -273,7 +273,7 @@ async def retry_api_call_async(func: Callable[[], Any]) -> Any:
     def _log_retry(retry_state: Any) -> None:
         exc = retry_state.outcome.exception() if retry_state.outcome else None
         exc_name = type(exc).__name__ if exc else "Unknown"
-        sleep_time = retry_state.next_action.sleep if retry_state.next_action else 0
+        sleep_time = retry_state.idle_for
         is_rate_limit = _is_rate_limit_error(exc) if exc else False
         error_type = "rate limited" if is_rate_limit else "failed"
         logger.warning(
