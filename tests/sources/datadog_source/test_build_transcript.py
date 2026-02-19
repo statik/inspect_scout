@@ -568,3 +568,23 @@ class TestFromQueryForwardsLimit:
 
         call_kwargs = mock_client.list_spans.call_args.kwargs
         assert call_kwargs["limit"] is None
+
+    @pytest.mark.asyncio
+    async def test_negative_limit_raises(self) -> None:
+        """Negative limit raises ValueError."""
+        mock_client = AsyncMock()
+        with pytest.raises(ValueError, match="limit must be a positive integer"):
+            async for _ in _from_query(
+                mock_client, "app", None, None, None, None, None, None, -1
+            ):
+                pass
+
+    @pytest.mark.asyncio
+    async def test_zero_limit_raises(self) -> None:
+        """Zero limit raises ValueError."""
+        mock_client = AsyncMock()
+        with pytest.raises(ValueError, match="limit must be a positive integer"):
+            async for _ in _from_query(
+                mock_client, "app", None, None, None, None, None, None, 0
+            ):
+                pass
