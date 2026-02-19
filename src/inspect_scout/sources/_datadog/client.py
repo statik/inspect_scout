@@ -79,9 +79,9 @@ class DatadogClient:
         if ml_app:
             params["filter[ml_app]"] = ml_app
         if from_time:
-            params["filter[from]"] = str(from_time.isoformat())
+            params["filter[from]"] = from_time.isoformat()
         if to_time:
-            params["filter[to]"] = str(to_time.isoformat())
+            params["filter[to]"] = to_time.isoformat()
         if trace_id:
             params["filter[trace_id]"] = trace_id
         if span_kind:

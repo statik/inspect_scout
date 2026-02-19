@@ -3,9 +3,7 @@
 from inspect_scout.sources._datadog.tree import (
     build_span_tree,
     flatten_tree_chronological,
-    get_agent_spans,
     get_llm_spans,
-    get_tool_spans,
 )
 
 from .mocks import (
@@ -207,38 +205,10 @@ class TestSpanFilters:
 
         assert len(llm_spans) == 3
 
-    def test_get_tool_spans(self) -> None:
-        """Filter to only tool spans."""
-        llm_span = create_llm_span(span_id="llm", trace_id="trace-1")
-        tool_span = create_tool_span(span_id="tool", trace_id="trace-1")
-        agent_span = create_agent_span(span_id="agent", trace_id="trace-1")
-
-        spans = [llm_span, tool_span, agent_span]
-        tool_spans = get_tool_spans(spans)
-
-        assert len(tool_spans) == 1
-        assert tool_spans[0]["span_id"] == "tool"
-
-    def test_get_agent_spans(self) -> None:
-        """Filter to only agent spans."""
-        llm_span = create_llm_span(span_id="llm", trace_id="trace-1")
-        tool_span = create_tool_span(span_id="tool", trace_id="trace-1")
-        agent_span = create_agent_span(span_id="agent", trace_id="trace-1")
-
-        spans = [llm_span, tool_span, agent_span]
-        agent_spans = get_agent_spans(spans)
-
-        assert len(agent_spans) == 1
-        assert agent_spans[0]["span_id"] == "agent"
-
     def test_tool_call_trace_filtering(self) -> None:
-        """Filter tool call trace spans by type."""
+        """Filter tool call trace to LLM spans."""
         spans = create_tool_call_trace()
 
         llm_spans = get_llm_spans(spans)
-        tool_spans = get_tool_spans(spans)
-        agent_spans = get_agent_spans(spans)
 
         assert len(llm_spans) == 2
-        assert len(tool_spans) == 1
-        assert len(agent_spans) == 1

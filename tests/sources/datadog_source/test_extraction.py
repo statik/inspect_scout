@@ -7,11 +7,10 @@ from inspect_scout.sources._datadog.extraction import (
     extract_output,
     extract_tools,
     extract_usage,
-    sum_latency,
     sum_tokens,
 )
 
-from .mocks import _SECOND_NS, create_llm_span
+from .mocks import create_llm_span
 
 pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
 
@@ -195,26 +194,3 @@ class TestSumTokens:
     def test_empty_spans(self) -> None:
         """Sum of empty list is 0."""
         assert sum_tokens([]) == 0
-
-
-class TestSumLatency:
-    """Tests for sum_latency function."""
-
-    def test_sum_nanosecond_durations(self) -> None:
-        """Sum duration from nanoseconds to seconds."""
-        span1 = create_llm_span(duration=_SECOND_NS)
-        span2 = create_llm_span(duration=2 * _SECOND_NS)
-
-        total = sum_latency([span1, span2])
-        assert total == pytest.approx(3.0)
-
-    def test_empty_spans(self) -> None:
-        """Sum of empty list is 0."""
-        assert sum_latency([]) == pytest.approx(0.0)
-
-    def test_missing_duration(self) -> None:
-        """Skip spans without duration."""
-        span = create_llm_span()
-        del span["duration"]
-
-        assert sum_latency([span]) == pytest.approx(0.0)

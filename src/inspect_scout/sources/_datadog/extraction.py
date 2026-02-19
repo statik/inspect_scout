@@ -159,9 +159,9 @@ def _normalize_messages(
                         if "type" not in new_tc:
                             new_tc["type"] = "function"
                         if "function" not in new_tc and "name" in new_tc:
-                            args = new_tc.pop("args", None) or new_tc.pop(
-                                "arguments", None
-                            )
+                            args = new_tc.pop("args", None)
+                            if args is None:
+                                args = new_tc.pop("arguments", None)
                             if isinstance(args, dict):
                                 args = json.dumps(args)
                             elif args is None:
@@ -408,26 +408,4 @@ def sum_tokens(spans: list[dict[str, Any]]) -> int:
         input_t = metrics.get("input_tokens") or 0
         output_t = metrics.get("output_tokens") or 0
         total += int(input_t) + int(output_t)
-    return total
-
-
-def sum_latency(spans: list[dict[str, Any]]) -> float:
-    """Sum latency across all spans.
-
-    Converts ``duration`` from nanoseconds to seconds.
-
-    Args:
-        spans: List of Datadog spans
-
-    Returns:
-        Total latency in seconds
-    """
-    total = 0.0
-    for span in spans:
-        duration = span.get("duration")
-        if duration is not None:
-            try:
-                total += int(duration) / 1e9
-            except (ValueError, TypeError):
-                pass
     return total

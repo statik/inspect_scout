@@ -1,5 +1,6 @@
 """Tests for Datadog client pagination and retry logic."""
 
+from datetime import datetime, timezone
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -233,3 +234,42 @@ class TestPagination:
         spans = await client.list_spans(limit=2)
 
         assert len(spans) == 2
+
+    @pytest.mark.asyncio
+    async def test_query_params_construction(self) -> None:
+        """Verify filter params are sent correctly for all query options."""
+        empty_response = {
+            "data": [],
+            "meta": {"page": {}},
+        }
+
+        mock_response = MagicMock()
+        mock_response.json.return_value = empty_response
+        mock_response.raise_for_status = MagicMock()
+
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(return_value=mock_response)
+
+        client = DatadogClient(http=mock_http, site="datadoghq.com")
+
+        from_time = datetime(2024, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        to_time = datetime(2024, 1, 16, 10, 0, 0, tzinfo=timezone.utc)
+
+        await client.list_spans(
+            ml_app="my-app",
+            from_time=from_time,
+            to_time=to_time,
+            trace_id="trace-abc",
+            span_kind="llm",
+            span_name="chat gpt-4o",
+            tags=["env:prod", "version:2"],
+        )
+
+        params = mock_http.get.call_args_list[0][1]["params"]
+        assert params["filter[ml_app]"] == "my-app"
+        assert params["filter[from]"] == from_time.isoformat()
+        assert params["filter[to]"] == to_time.isoformat()
+        assert params["filter[trace_id]"] == "trace-abc"
+        assert params["filter[span_kind]"] == "llm"
+        assert params["filter[span_name]"] == "chat gpt-4o"
+        assert params["filter[tags]"] == "env:prod,version:2"

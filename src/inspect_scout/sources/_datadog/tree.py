@@ -117,31 +117,3 @@ def get_llm_spans(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
     from .detection import is_llm_span
 
     return [span for span in spans if is_llm_span(span)]
-
-
-def get_tool_spans(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Filter spans to only tool execution spans.
-
-    Args:
-        spans: List of Datadog spans
-
-    Returns:
-        List of tool spans
-    """
-    from .detection import is_tool_span
-
-    return [span for span in spans if is_tool_span(span)]
-
-
-def get_agent_spans(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Filter spans to agent/workflow/task spans.
-
-    Args:
-        spans: List of Datadog spans
-
-    Returns:
-        List of agent spans
-    """
-    from .detection import is_agent_span
-
-    return [span for span in spans if is_agent_span(span)]
