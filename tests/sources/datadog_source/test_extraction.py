@@ -196,6 +196,11 @@ class TestSumTokens:
         total = sum_tokens([span1, span2])
         assert total == 45
 
+    def test_prefers_total_tokens(self) -> None:
+        """Use total_tokens when available instead of input + output."""
+        span = create_llm_span(input_tokens=10, output_tokens=5, total_tokens=20)
+        assert sum_tokens([span]) == 20
+
     def test_empty_spans(self) -> None:
         """Sum of empty list is 0."""
         assert sum_tokens([]) == 0
