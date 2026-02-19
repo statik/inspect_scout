@@ -6,6 +6,7 @@ with httpx for HTTP calls. No SDK dependency required.
 
 import os
 from dataclasses import dataclass
+from datetime import datetime
 from logging import getLogger
 from typing import Any, Callable, TypeVar
 
@@ -46,8 +47,8 @@ class DatadogClient:
     async def list_spans(
         self,
         ml_app: str | None = None,
-        from_time: Any | None = None,
-        to_time: Any | None = None,
+        from_time: datetime | None = None,
+        to_time: datetime | None = None,
         trace_id: str | None = None,
         span_kind: str | None = None,
         span_name: str | None = None,

@@ -155,7 +155,7 @@ async def _from_query(
                 if limit and count >= limit:
                     return
         except Exception as e:
-            if os.environ.get("DATADOG_STRICT_IMPORT"):
+            if os.environ.get("DATADOG_STRICT_IMPORT", "").lower() in ("1", "true"):
                 raise
             logger.warning(f"Failed to process trace {tid}: {e}")
             continue

@@ -270,9 +270,11 @@ def _extract_tool_calls(
     tool_calls: list[ToolCall] = []
     for tc in tool_calls_data:
         if not isinstance(tc, dict):
+            logger.debug("Skipping non-dict tool call entry: %s", type(tc).__name__)
             continue
         func = tc.get("function", tc)
         if not isinstance(func, dict):
+            logger.debug("Skipping tool call with non-dict function: %s", tc.get("id", "unknown"))
             continue
         args_str = func.get("arguments", "{}")
         try:
