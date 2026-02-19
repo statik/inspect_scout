@@ -3,6 +3,7 @@
 import pytest
 from inspect_scout.sources._datadog.detection import Provider
 from inspect_scout.sources._datadog.extraction import (
+    _normalize_messages,
     extract_input_messages,
     extract_output,
     extract_tools,
@@ -194,3 +195,32 @@ class TestSumTokens:
     def test_empty_spans(self) -> None:
         """Sum of empty list is 0."""
         assert sum_tokens([]) == 0
+
+
+class TestNormalizeMessages:
+    """Tests for _normalize_messages falsy-args handling."""
+
+    @pytest.mark.parametrize(
+        "args_value",
+        ["", {}],
+        ids=["empty-string", "empty-dict"],
+    )
+    def test_falsy_args_preserved(self, args_value: object) -> None:
+        """Falsy but non-None args should be used, not replaced by arguments."""
+        messages = [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "name": "fn",
+                        "args": args_value,
+                        "arguments": '{"x": 1}',
+                    }
+                ],
+            }
+        ]
+        result = _normalize_messages(messages)
+        tc = result[0]["tool_calls"][0]
+        # args was falsy but present — should be used instead of arguments
+        expected = "{}" if isinstance(args_value, dict) else args_value
+        assert tc["function"]["arguments"] == expected

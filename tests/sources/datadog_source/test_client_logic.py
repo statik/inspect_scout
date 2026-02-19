@@ -265,7 +265,7 @@ class TestPagination:
             tags=["env:prod", "version:2"],
         )
 
-        params = mock_http.get.call_args_list[0][1]["params"]
+        params = mock_http.get.call_args_list[0].kwargs["params"]
         assert params["filter[ml_app]"] == "my-app"
         assert params["filter[from]"] == from_time.isoformat()
         assert params["filter[to]"] == to_time.isoformat()
