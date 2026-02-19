@@ -12,7 +12,7 @@ Authentication:
 
 import os
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from logging import getLogger
 from typing import Any, AsyncIterator
 
@@ -33,7 +33,7 @@ from .client import (
 )
 from .detection import detect_provider
 from .events import spans_to_events
-from .extraction import sum_latency, sum_tokens
+from .extraction import sum_tokens
 from .tree import build_span_tree, flatten_tree_chronological, get_llm_spans
 
 logger = getLogger(__name__)
@@ -125,19 +125,15 @@ async def _from_query(
     Yields:
         Transcript objects
     """
-    try:
-        all_spans = await client.list_spans(
-            ml_app=ml_app,
-            from_time=from_time,
-            to_time=to_time,
-            trace_id=trace_id,
-            span_kind=span_kind,
-            span_name=span_name,
-            tags=tags,
-        )
-    except Exception as e:
-        logger.error(f"Failed to fetch spans from Datadog: {e}")
-        return
+    all_spans = await client.list_spans(
+        ml_app=ml_app,
+        from_time=from_time,
+        to_time=to_time,
+        trace_id=trace_id,
+        span_kind=span_kind,
+        span_name=span_name,
+        tags=tags,
+    )
 
     traces: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for span in all_spans:
@@ -157,7 +153,7 @@ async def _from_query(
         except Exception as e:
             if os.environ.get("DATADOG_STRICT_IMPORT", "").lower() in ("1", "true"):
                 raise
-            logger.warning(f"Failed to process trace {tid}: {e}")
+            logger.warning("Failed to process trace %s: %s", tid, e)
             continue
 
 
@@ -218,8 +214,6 @@ async def _build_transcript(
     start_ns = root_span.get("start_ns")
     if start_ns is not None:
         try:
-            from datetime import timezone
-
             dt = datetime.fromtimestamp(int(start_ns) / 1e9, tz=timezone.utc)
             date = dt.isoformat()
         except (ValueError, TypeError, OverflowError):
@@ -254,13 +248,31 @@ async def _build_transcript(
         success=metadata.get("success"),
         message_count=len(messages),
         total_tokens=sum_tokens(llm_spans),
-        total_time=sum_latency(ordered_spans),
+        total_time=_root_duration(root_span),
         error=error,
         limit=None,
         messages=messages,
         events=events,
         metadata=metadata,
     )
+
+
+def _root_duration(root_span: dict[str, Any]) -> float:
+    """Get the root span's duration in seconds.
+
+    Args:
+        root_span: Root span dictionary
+
+    Returns:
+        Duration in seconds, or 0.0 if unavailable
+    """
+    duration = root_span.get("duration")
+    if duration is not None:
+        try:
+            return int(duration) / 1e9
+        except (ValueError, TypeError):
+            pass
+    return 0.0
 
 
 def _get_ml_app_from_tags(span: dict[str, Any]) -> str | None:
@@ -361,4 +373,4 @@ def _extract_model_options(span: dict[str, Any]) -> dict[str, Any] | None:
     return options if options else None
 
 
-__all__ = ["datadog", "DATADOG_SOURCE_TYPE", "detect_provider"]
+__all__ = ["datadog", "DATADOG_SOURCE_TYPE"]

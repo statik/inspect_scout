@@ -74,7 +74,8 @@ async def _convert_messages(
             system_text = _extract_system_text(messages)
             non_system = [m for m in messages if m.get("role") != "system"]
             return await messages_from_anthropic(
-                non_system, system_message=system_text  # type: ignore[arg-type]
+                non_system,
+                system_message=system_text,  # type: ignore[arg-type]
             )
         except Exception:
             logger.debug("messages_from_anthropic failed, using OpenAI converter")
@@ -274,7 +275,9 @@ def _extract_tool_calls(
             continue
         func = tc.get("function", tc)
         if not isinstance(func, dict):
-            logger.debug("Skipping tool call with non-dict function: %s", tc.get("id", "unknown"))
+            logger.debug(
+                "Skipping tool call with non-dict function: %s", tc.get("id", "unknown")
+            )
             continue
         args_str = func.get("arguments", "{}")
         try:

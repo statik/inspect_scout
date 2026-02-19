@@ -2,7 +2,6 @@
 
 import pytest
 from inspect_ai.event import ModelEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
-
 from inspect_scout.sources._datadog.events import (
     _ns_to_datetime,
     spans_to_events,
@@ -22,6 +21,8 @@ from .mocks import (
     create_tool_span,
 )
 
+pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
+
 
 class TestNsToDatetime:
     """Tests for _ns_to_datetime helper."""
@@ -32,19 +33,21 @@ class TestNsToDatetime:
         assert dt.year == 2023
         assert dt.month == 11
 
-    def test_none_returns_min(self) -> None:
-        """Return datetime.min for None input."""
-        from datetime import datetime
+    def test_none_returns_min_utc(self) -> None:
+        """Return UTC-aware datetime.min for None input."""
+        from datetime import datetime, timezone
 
         dt = _ns_to_datetime(None)
-        assert dt == datetime.min
+        assert dt == datetime.min.replace(tzinfo=timezone.utc)
+        assert dt.tzinfo is not None
 
-    def test_invalid_returns_min(self) -> None:
-        """Return datetime.min for invalid input."""
-        from datetime import datetime
+    def test_invalid_returns_min_utc(self) -> None:
+        """Return UTC-aware datetime.min for invalid input."""
+        from datetime import datetime, timezone
 
         dt = _ns_to_datetime("not-a-number")
-        assert dt == datetime.min
+        assert dt == datetime.min.replace(tzinfo=timezone.utc)
+        assert dt.tzinfo is not None
 
 
 class TestToModelEvent:

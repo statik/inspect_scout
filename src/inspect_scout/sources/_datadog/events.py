@@ -30,6 +30,8 @@ from .detection import (
 )
 from .extraction import extract_input_messages, extract_output, extract_tools
 
+_DATETIME_MIN_UTC = datetime.min.replace(tzinfo=timezone.utc)
+
 
 def _ns_to_datetime(ns: Any) -> datetime:
     """Convert nanosecond timestamp to datetime.
@@ -38,14 +40,14 @@ def _ns_to_datetime(ns: Any) -> datetime:
         ns: Nanosecond timestamp (int or None)
 
     Returns:
-        UTC datetime, or datetime.min if conversion fails
+        UTC datetime, or datetime.min (UTC) if conversion fails
     """
     if ns is not None:
         try:
             return datetime.fromtimestamp(int(ns) / 1e9, tz=timezone.utc)
         except (ValueError, TypeError, OverflowError):
             pass
-    return datetime.min
+    return _DATETIME_MIN_UTC
 
 
 def _get_timestamp(span: dict[str, Any]) -> datetime:
@@ -63,7 +65,7 @@ def _get_end_timestamp(span: dict[str, Any]) -> datetime:
             return datetime.fromtimestamp(end_ns / 1e9, tz=timezone.utc)
         except (ValueError, TypeError, OverflowError):
             pass
-    return datetime.min
+    return _DATETIME_MIN_UTC
 
 
 async def to_model_event(span: dict[str, Any]) -> ModelEvent:
@@ -217,6 +219,6 @@ async def spans_to_events(spans: list[dict[str, Any]]) -> list[Event]:
             if duration is not None:
                 events.append(to_span_end_event(span))
 
-    events.sort(key=lambda e: e.timestamp or datetime.min)
+    events.sort(key=lambda e: e.timestamp or _DATETIME_MIN_UTC)
 
     return events

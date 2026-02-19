@@ -285,9 +285,12 @@ async def retry_api_call_async(func: Callable[[], Any]) -> Any:
         is_rate_limit = _is_rate_limit_error(exc) if exc else False
         error_type = "rate limited" if is_rate_limit else "failed"
         logger.warning(
-            f"Datadog API call {error_type} ({exc_name}), "
-            f"retrying in {sleep_time:.1f}s... "
-            f"(attempt {retry_state.attempt_number}/{RATE_LIMIT_MAX_ATTEMPTS})"
+            "Datadog API call %s (%s), retrying in %.1fs... (attempt %d/%d)",
+            error_type,
+            exc_name,
+            sleep_time,
+            retry_state.attempt_number,
+            RATE_LIMIT_MAX_ATTEMPTS,
         )
 
     def _wait_with_rate_limit_handling(retry_state: Any) -> float:
@@ -298,7 +301,7 @@ async def retry_api_call_async(func: Callable[[], Any]) -> Any:
             retry_after = _get_retry_after(exc)
             if retry_after:
                 wait_time = min(retry_after, float(RATE_LIMIT_MAX_WAIT))
-                logger.info(f"Rate limit: waiting {wait_time}s per Retry-After header")
+                logger.info("Rate limit: waiting %ss per Retry-After header", wait_time)
                 return wait_time
             attempt: int = retry_state.attempt_number
             return float(

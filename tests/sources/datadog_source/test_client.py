@@ -1,7 +1,6 @@
 """Tests for Datadog client creation and configuration."""
 
 import pytest
-
 from inspect_scout.sources._datadog.client import (
     DATADOG_SOURCE_TYPE,
     get_datadog_client,

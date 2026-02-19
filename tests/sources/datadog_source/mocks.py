@@ -4,7 +4,6 @@ Provides factory functions that create Datadog span dictionaries matching
 the Export API's ``data[].attributes`` structure.
 """
 
-from datetime import datetime, timezone
 from typing import Any
 
 # Base timestamp in nanoseconds (2023-11-14T22:13:20Z)

@@ -39,7 +39,7 @@ def skip_if_no_datadog(func: F) -> F:
     )
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def no_fallback_warnings(monkeypatch: pytest.MonkeyPatch) -> Any:
     """Assert no fallback warnings from extraction during tests.
 

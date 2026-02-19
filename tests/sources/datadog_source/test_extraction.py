@@ -1,8 +1,6 @@
 """Tests for Datadog message/output/token extraction."""
 
 import pytest
-from inspect_ai.model._model_output import ModelUsage
-
 from inspect_scout.sources._datadog.detection import Provider
 from inspect_scout.sources._datadog.extraction import (
     extract_input_messages,
@@ -13,7 +11,9 @@ from inspect_scout.sources._datadog.extraction import (
     sum_tokens,
 )
 
-from .mocks import _BASE_NS, _SECOND_NS, create_llm_span, create_tool_span
+from .mocks import _SECOND_NS, create_llm_span
+
+pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
 
 
 class TestExtractInputMessages:
