@@ -315,6 +315,48 @@ class TestPagination:
         assert len(spans) == 2
 
     @pytest.mark.asyncio
+    async def test_pagination_retries_on_transient_error(self) -> None:
+        """Second page fails with 500, retries, and succeeds."""
+        page1 = {
+            "data": [{"attributes": {"span_id": "s1"}}],
+            "meta": {"page": {"after": "cursor-abc"}},
+        }
+        page2 = {
+            "data": [{"attributes": {"span_id": "s2"}}],
+            "meta": {"page": {}},
+        }
+
+        mock_response_1 = MagicMock()
+        mock_response_1.json.return_value = page1
+        mock_response_1.raise_for_status = MagicMock()
+
+        error_response = httpx.Response(
+            500, request=httpx.Request("GET", "https://x")
+        )
+        server_error = httpx.HTTPStatusError(
+            "server error",
+            request=error_response.request,
+            response=error_response,
+        )
+
+        mock_response_2 = MagicMock()
+        mock_response_2.json.return_value = page2
+        mock_response_2.raise_for_status = MagicMock()
+
+        mock_http = AsyncMock()
+        mock_http.get = AsyncMock(
+            side_effect=[mock_response_1, server_error, mock_response_2]
+        )
+
+        client = DatadogClient(http=mock_http, site="datadoghq.com")
+        spans = await client.list_spans()
+
+        assert len(spans) == 2
+        assert spans[0]["span_id"] == "s1"
+        assert spans[1]["span_id"] == "s2"
+        assert mock_http.get.await_count == 3
+
+    @pytest.mark.asyncio
     async def test_query_params_construction(self) -> None:
         """Verify filter params are sent correctly for all query options."""
         empty_response = {

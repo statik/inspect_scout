@@ -193,6 +193,10 @@ async def _build_transcript(
     tree = build_span_tree(trace_spans)
     ordered_spans = flatten_tree_chronological(tree)
 
+    if not ordered_spans:
+        logger.warning("Trace %s: all spans dropped (empty span_id)", trace_id)
+        return None
+
     events = await spans_to_events(ordered_spans)
 
     llm_spans = get_llm_spans(ordered_spans)

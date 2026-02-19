@@ -588,3 +588,20 @@ class TestFromQueryForwardsLimit:
                 mock_client, "app", None, None, None, None, None, None, 0
             ):
                 pass
+
+
+class TestBuildTranscriptEmptySpans:
+    """Tests for _build_transcript with spans that get dropped."""
+
+    @pytest.mark.asyncio
+    async def test_all_empty_span_ids_returns_none(self) -> None:
+        """Return None when all spans have empty span_id."""
+        span: dict[str, Any] = {
+            "span_id": "",
+            "trace_id": "trace-1",
+            "meta": {"kind": "llm"},
+        }
+        result = await _build_transcript(
+            [span], "my-app", "trace-1", "datadoghq.com"
+        )
+        assert result is None

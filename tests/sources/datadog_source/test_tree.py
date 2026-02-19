@@ -1,5 +1,6 @@
 """Tests for Datadog trace tree reconstruction."""
 
+import pytest
 from inspect_scout.sources._datadog.tree import (
     build_span_tree,
     flatten_tree_chronological,
@@ -116,6 +117,16 @@ class TestBuildSpanTree:
         assert node.start_time is not None
         assert node.start_time.year == 2023
         assert node.start_time.month == 11
+
+
+    def test_empty_span_id_logged(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Span with empty span_id is dropped with a warning."""
+        span = {"span_id": "", "trace_id": "trace-1"}
+        with caplog.at_level("WARNING", logger="inspect_scout.sources._datadog.tree"):
+            roots = build_span_tree([span])
+
+        assert roots == []
+        assert "empty span_id" in caplog.text
 
 
 class TestFlattenTreeChronological:

@@ -6,7 +6,10 @@ with nanosecond timestamps (``start_ns``, ``duration``).
 
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
+from logging import getLogger
 from typing import Any
+
+logger = getLogger(__name__)
 
 DATETIME_MIN_UTC = datetime.min.replace(tzinfo=timezone.utc)
 
@@ -56,6 +59,8 @@ def build_span_tree(spans: list[dict[str, Any]]) -> list[SpanNode]:
         span_id = str(span.get("span_id", ""))
         if span_id:
             nodes[span_id] = SpanNode(span=span)
+        else:
+            logger.warning("Dropping span with empty span_id (trace_id=%s)", span.get("trace_id"))
 
     roots: list[SpanNode] = []
     for node in nodes.values():

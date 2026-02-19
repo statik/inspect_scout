@@ -228,6 +228,29 @@ class TestNormalizeMessages:
         expected = "{}" if isinstance(args_value, dict) else args_value
         assert tc["function"]["arguments"] == expected
 
+    @pytest.mark.parametrize(
+        ("args_value", "expected"),
+        [
+            ([1, 2, 3], "[1, 2, 3]"),
+            (42, "42"),
+            (True, "true"),
+        ],
+        ids=["list", "int", "bool"],
+    )
+    def test_non_string_non_dict_args_serialized(
+        self, args_value: object, expected: str
+    ) -> None:
+        """Non-string, non-dict args are JSON-serialized."""
+        messages = [
+            {
+                "role": "assistant",
+                "tool_calls": [{"name": "fn", "args": args_value}],
+            }
+        ]
+        result = _normalize_messages(messages)
+        tc = result[0]["tool_calls"][0]
+        assert tc["function"]["arguments"] == expected
+
     def test_stale_arguments_key_removed(self) -> None:
         """Stale arguments key should not remain on the tool call dict."""
         messages = [
