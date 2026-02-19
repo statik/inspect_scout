@@ -74,9 +74,11 @@ async def _convert_messages(
 
             system_text = _extract_system_text(messages)
             non_system = [m for m in messages if m.get("role") != "system"]
+            # Datadog messages are list[dict[str, Any]], not the typed
+            # dicts the converter expects; runtime format is compatible.
             return await messages_from_anthropic(
-                non_system,
-                system_message=system_text,  # type: ignore[arg-type]
+                non_system,  # type: ignore[arg-type]
+                system_message=system_text,
             )
         except Exception:
             logger.debug("messages_from_anthropic failed, using OpenAI converter")
@@ -86,6 +88,7 @@ async def _convert_messages(
             from inspect_ai.model import messages_from_openai
 
             normalized = _normalize_messages(messages)
+            # Normalized dicts match OpenAI format at runtime; see note above.
             return await messages_from_openai(normalized)  # type: ignore[arg-type]
         except Exception:
             logger.debug(
@@ -96,6 +99,7 @@ async def _convert_messages(
         from inspect_ai.model import messages_from_openai
 
         normalized = _normalize_messages(messages)
+        # Normalized dicts match OpenAI format at runtime; see note above.
         return await messages_from_openai(normalized)  # type: ignore[arg-type]
     except Exception:
         logger.debug("messages_from_openai failed, using simple conversion")
@@ -160,8 +164,9 @@ def _normalize_messages(
                             new_tc["type"] = "function"
                         if "function" not in new_tc and "name" in new_tc:
                             args = new_tc.pop("args", None)
+                            raw_arguments = new_tc.pop("arguments", None)
                             if args is None:
-                                args = new_tc.pop("arguments", None)
+                                args = raw_arguments
                             if isinstance(args, dict):
                                 args = json.dumps(args)
                             elif args is None:

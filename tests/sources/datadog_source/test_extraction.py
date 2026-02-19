@@ -3,7 +3,10 @@
 import pytest
 from inspect_scout.sources._datadog.detection import Provider
 from inspect_scout.sources._datadog.extraction import (
+    _extract_tool_calls,
     _normalize_messages,
+    _parse_tool_schema,
+    _simple_message_conversion,
     extract_input_messages,
     extract_output,
     extract_tools,
@@ -224,3 +227,125 @@ class TestNormalizeMessages:
         # args was falsy but present — should be used instead of arguments
         expected = "{}" if isinstance(args_value, dict) else args_value
         assert tc["function"]["arguments"] == expected
+
+    def test_stale_arguments_key_removed(self) -> None:
+        """Stale arguments key should not remain on the tool call dict."""
+        messages = [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "name": "fn",
+                        "args": "",
+                        "arguments": '{"x": 1}',
+                    }
+                ],
+            }
+        ]
+        result = _normalize_messages(messages)
+        tc = result[0]["tool_calls"][0]
+        assert "arguments" not in tc, "stale 'arguments' key should be removed"
+        assert "arguments" in tc["function"]
+
+
+class TestSimpleMessageConversion:
+    """Tests for _simple_message_conversion fallback."""
+
+    def test_converts_all_roles(self) -> None:
+        """Convert system, user, and assistant messages."""
+        messages = [
+            {"role": "system", "content": "Be helpful"},
+            {"role": "user", "content": "Hi"},
+            {"role": "assistant", "content": "Hello!"},
+        ]
+        result = _simple_message_conversion(messages)
+
+        assert len(result) == 3
+        assert result[0].role == "system"
+        assert result[1].role == "user"
+        assert result[2].role == "assistant"
+
+    def test_skips_unknown_roles(self) -> None:
+        """Messages with unrecognized roles are skipped."""
+        messages = [
+            {"role": "user", "content": "Hi"},
+            {"role": "tool", "content": "result"},
+        ]
+        result = _simple_message_conversion(messages)
+
+        assert len(result) == 1
+        assert result[0].role == "user"
+
+    def test_empty_messages(self) -> None:
+        """Empty input produces empty output."""
+        assert _simple_message_conversion([]) == []
+
+    def test_missing_content_defaults_to_empty(self) -> None:
+        """Missing content field defaults to empty string."""
+        messages = [{"role": "user"}]
+        result = _simple_message_conversion(messages)
+
+        assert len(result) == 1
+        assert result[0].content == ""
+
+
+class TestParseToolSchema:
+    """Tests for _parse_tool_schema with various input formats."""
+
+    def test_string_json_input(self) -> None:
+        """Parse a JSON string tool schema."""
+        import json
+
+        schema = json.dumps(
+            {
+                "function": {
+                    "name": "search",
+                    "description": "Search the web",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {"q": {"type": "string"}},
+                        "required": ["q"],
+                    },
+                }
+            }
+        )
+        result = _parse_tool_schema(schema)
+
+        assert result is not None
+        assert result.name == "search"
+        assert result.description == "Search the web"
+
+    def test_invalid_json_string_returns_none(self) -> None:
+        """Invalid JSON string returns None."""
+        assert _parse_tool_schema("not json") is None
+
+    def test_non_dict_non_str_returns_none(self) -> None:
+        """Non-dict, non-string input returns None."""
+        assert _parse_tool_schema(42) is None
+        assert _parse_tool_schema(None) is None
+
+
+class TestExtractToolCalls:
+    """Tests for _extract_tool_calls with edge cases."""
+
+    def test_non_dict_entries_skipped(self) -> None:
+        """Non-dict entries in tool_calls list are skipped."""
+        data = [
+            "not a dict",
+            42,
+            {
+                "id": "call_1",
+                "function": {"name": "fn", "arguments": "{}"},
+            },
+        ]
+        result = _extract_tool_calls(data)  # type: ignore[arg-type]
+
+        assert len(result) == 1
+        assert result[0].function == "fn"
+
+    def test_non_dict_function_skipped(self) -> None:
+        """Tool call with non-dict function field is skipped."""
+        data = [{"id": "call_1", "function": "not_a_dict"}]
+        result = _extract_tool_calls(data)
+
+        assert len(result) == 0

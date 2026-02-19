@@ -134,6 +134,8 @@ async def _from_query(
     Yields:
         Transcript objects
     """
+    if limit is not None and limit < 1:
+        raise ValueError(f"limit must be a positive integer, got {limit}")
     span_limit = min(limit * 50, 10_000) if limit else None
     all_spans = await client.list_spans(
         ml_app=ml_app,
