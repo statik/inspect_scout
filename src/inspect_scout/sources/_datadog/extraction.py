@@ -13,6 +13,7 @@ from inspect_ai.model import ModelOutput
 from inspect_ai.model._chat_message import (
     ChatMessage,
     ChatMessageAssistant,
+    ChatMessageSystem,
     ChatMessageUser,
 )
 from inspect_ai.model._model_output import ChatCompletionChoice, ModelUsage
@@ -192,7 +193,9 @@ def _simple_message_conversion(
     for msg in messages:
         role = msg.get("role", "user")
         content = str(msg.get("content", ""))
-        if role in ("user", "system"):
+        if role == "system":
+            result.append(ChatMessageSystem(content=content))
+        elif role == "user":
             result.append(ChatMessageUser(content=content))
         elif role == "assistant":
             result.append(ChatMessageAssistant(content=content))

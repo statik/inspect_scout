@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
+_DATETIME_MIN_UTC = datetime.min.replace(tzinfo=timezone.utc)
+
 
 @dataclass
 class SpanNode:
@@ -64,14 +66,14 @@ def build_span_tree(spans: list[dict[str, Any]]) -> list[SpanNode]:
             roots.append(node)
 
     def sort_children(node: SpanNode) -> None:
-        node.children.sort(key=lambda n: n.start_time or datetime.min)
+        node.children.sort(key=lambda n: n.start_time or _DATETIME_MIN_UTC)
         for child in node.children:
             sort_children(child)
 
     for root in roots:
         sort_children(root)
 
-    roots.sort(key=lambda n: n.start_time or datetime.min)
+    roots.sort(key=lambda n: n.start_time or _DATETIME_MIN_UTC)
 
     return roots
 

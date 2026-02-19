@@ -8,13 +8,16 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 from logging import getLogger
-from typing import Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable, TypeVar
 
 from tenacity import (
     retry,
     retry_if_exception,
     stop_after_attempt,
 )
+
+if TYPE_CHECKING:
+    import httpx
 
 logger = getLogger(__name__)
 
@@ -41,7 +44,7 @@ class DatadogClient:
         site: Datadog site identifier (e.g. ``datadoghq.com``)
     """
 
-    http: Any  # httpx.AsyncClient
+    http: "httpx.AsyncClient"
     site: str
 
     async def list_spans(

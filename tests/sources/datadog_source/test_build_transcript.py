@@ -3,7 +3,7 @@
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from inspect_scout.sources._datadog import _build_transcript, datadog
+from inspect_scout.sources._datadog import _build_transcript, _from_query, datadog
 from inspect_scout.sources._datadog.client import DATADOG_SOURCE_TYPE
 
 from .mocks import (
@@ -199,3 +199,76 @@ class TestDatadogGenerator:
                     pass
 
         mock_client.aclose.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_strict_import_propagates_trace_errors(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """DATADOG_STRICT_IMPORT=1 re-raises per-trace processing errors."""
+        monkeypatch.setenv("DATADOG_STRICT_IMPORT", "1")
+
+        spans = [create_llm_span(span_id="s1", trace_id="t1")]
+
+        mock_client = AsyncMock()
+        mock_client.list_spans = AsyncMock(return_value=spans)
+        mock_client.site = "datadoghq.com"
+        mock_client.aclose = AsyncMock()
+
+        with patch(
+            "inspect_scout.sources._datadog._build_transcript",
+            side_effect=RuntimeError("bad span data"),
+        ):
+            with pytest.raises(RuntimeError, match="bad span data"):
+                async for _ in _from_query(
+                    mock_client,
+                    "test-app",
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                    None,
+                ):
+                    pass
+
+    @pytest.mark.asyncio
+    async def test_default_import_skips_trace_errors(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        no_fallback_warnings: list[str],
+    ) -> None:
+        """Without DATADOG_STRICT_IMPORT, per-trace errors are logged and skipped."""
+        monkeypatch.delenv("DATADOG_STRICT_IMPORT", raising=False)
+
+        spans = [
+            create_llm_span(span_id="s1", trace_id="t1"),
+            create_llm_span(span_id="s2", trace_id="t2"),
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.list_spans = AsyncMock(return_value=spans)
+        mock_client.site = "datadoghq.com"
+        mock_client.aclose = AsyncMock()
+
+        with patch(
+            "inspect_scout.sources._datadog._build_transcript",
+            side_effect=RuntimeError("bad span data"),
+        ):
+            results: list[object] = []
+            async for t in _from_query(
+                mock_client,
+                "test-app",
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            ):
+                results.append(t)
+
+        assert results == []
+        assert len(no_fallback_warnings) == 2
+        no_fallback_warnings.clear()

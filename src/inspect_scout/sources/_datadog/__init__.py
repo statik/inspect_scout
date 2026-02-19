@@ -78,6 +78,11 @@ async def datadog(
     Raises:
         ImportError: If httpx package is not installed
         ValueError: If required credentials are missing
+
+    Environment:
+        DATADOG_STRICT_IMPORT: Set to ``1`` or ``true`` to propagate
+            per-trace processing errors instead of logging and skipping.
+            Useful for debugging import failures.
     """
     client = get_datadog_client(api_key, app_key, site)
 
