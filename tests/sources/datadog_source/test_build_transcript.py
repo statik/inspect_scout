@@ -136,6 +136,7 @@ class TestBuildTranscript:
         assert transcript.error == "Rate limited"
 
 
+@pytest.mark.usefixtures("no_fallback_warnings")
 class TestExtractModelOptions:
     """Tests for _extract_model_options function."""
 
