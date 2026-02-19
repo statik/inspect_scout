@@ -66,23 +66,19 @@ def no_fallback_warnings(monkeypatch: pytest.MonkeyPatch) -> Any:
 
 
 @pytest.fixture
-def datadog_client() -> Any:
-    """Create a Datadog client for testing.
+def datadog_client() -> None:
+    """Verify Datadog credentials are available for integration tests.
 
-    Uses DD_API_KEY, DD_APP_KEY, and DD_SITE environment variables.
-
-    Returns:
-        DatadogClient instance
-
-    Raises:
-        pytest.skip: If credentials are not set
+    Skips the test if httpx is not installed or credentials are missing.
+    Does not create an actual client — integration tests use datadog()
+    which manages its own client lifecycle.
     """
     try:
-        from inspect_scout.sources._datadog.client import get_datadog_client
+        import httpx  # noqa: F401
     except ImportError:
         pytest.skip("httpx package not installed")
 
-    try:
-        return get_datadog_client()
-    except ValueError as e:
-        pytest.skip(str(e))
+    if not os.environ.get("DD_API_KEY"):
+        pytest.skip("DD_API_KEY not set")
+    if not os.environ.get("DD_APP_KEY"):
+        pytest.skip("DD_APP_KEY not set")

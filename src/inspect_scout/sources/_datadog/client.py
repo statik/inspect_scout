@@ -197,24 +197,12 @@ def _is_retryable_error(exception: BaseException) -> bool:
     Returns:
         True if the error is transient and should be retried
     """
-    try:
-        import httpx
+    import httpx
 
-        if isinstance(exception, (httpx.TimeoutException, httpx.ConnectError)):
-            return True
-        if isinstance(exception, httpx.HTTPStatusError):
-            return exception.response.status_code in RETRYABLE_HTTP_CODES
-    except ImportError:
-        pass
-
-    exc_name = type(exception).__name__
-    if "Timeout" in exc_name or "ConnectionError" in exc_name:
+    if isinstance(exception, (httpx.TimeoutException, httpx.ConnectError)):
         return True
-
-    exc_str = str(exception).lower()
-    if "rate limit" in exc_str or "429" in exc_str or "too many requests" in exc_str:
-        return True
-
+    if isinstance(exception, httpx.HTTPStatusError):
+        return exception.response.status_code in RETRYABLE_HTTP_CODES
     return False
 
 
@@ -227,16 +215,11 @@ def _is_rate_limit_error(exception: BaseException) -> bool:
     Returns:
         True if this is a rate limit error that needs longer backoff
     """
-    try:
-        import httpx
+    import httpx
 
-        if isinstance(exception, httpx.HTTPStatusError):
-            return exception.response.status_code == 429
-    except ImportError:
-        pass
-
-    exc_str = str(exception).lower()
-    return "rate limit" in exc_str or "429" in exc_str or "too many requests" in exc_str
+    if isinstance(exception, httpx.HTTPStatusError):
+        return exception.response.status_code == 429
+    return False
 
 
 def _get_retry_after(exception: BaseException) -> float | None:
@@ -248,18 +231,15 @@ def _get_retry_after(exception: BaseException) -> float | None:
     Returns:
         Seconds to wait, or None if not available
     """
-    try:
-        import httpx
+    import httpx
 
-        if isinstance(exception, httpx.HTTPStatusError):
-            retry_after = exception.response.headers.get("Retry-After")
-            if retry_after:
-                try:
-                    return float(retry_after)
-                except ValueError:
-                    pass
-    except ImportError:
-        pass
+    if isinstance(exception, httpx.HTTPStatusError):
+        retry_after = exception.response.headers.get("Retry-After")
+        if retry_after:
+            try:
+                return float(retry_after)
+            except ValueError:
+                pass
     return None
 
 

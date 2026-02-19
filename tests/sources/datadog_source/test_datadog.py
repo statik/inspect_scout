@@ -4,8 +4,6 @@ These tests require real Datadog credentials and are skipped unless
 DATADOG_RUN_TESTS=1 is set.
 """
 
-from typing import Any
-
 import pytest
 
 from .conftest import skip_if_no_datadog
@@ -16,7 +14,7 @@ class TestDatadogIntegration:
     """Integration tests for the Datadog adapter."""
 
     @pytest.mark.asyncio
-    async def test_fetch_transcripts(self, datadog_client: Any) -> None:
+    async def test_fetch_transcripts(self, datadog_client: None) -> None:
         """Fetch transcripts from Datadog."""
         from inspect_scout.sources._datadog import datadog
 
@@ -29,7 +27,7 @@ class TestDatadogIntegration:
         assert count <= 1
 
     @pytest.mark.asyncio
-    async def test_fetch_with_ml_app(self, datadog_client: Any) -> None:
+    async def test_fetch_with_ml_app(self, datadog_client: None) -> None:
         """Fetch transcripts filtered by ml_app."""
         import os
 
@@ -44,7 +42,7 @@ class TestDatadogIntegration:
             break
 
     @pytest.mark.asyncio
-    async def test_transcript_has_events(self, datadog_client: Any) -> None:
+    async def test_transcript_has_events(self, datadog_client: None) -> None:
         """Fetched transcripts should have events."""
         from inspect_scout.sources._datadog import datadog
 

@@ -1,9 +1,15 @@
 """Tests for _build_transcript and datadog() with mocked client."""
 
+from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
-from inspect_scout.sources._datadog import _build_transcript, _from_query, datadog
+from inspect_scout.sources._datadog import (
+    _build_transcript,
+    _extract_model_options,
+    _from_query,
+    datadog,
+)
 from inspect_scout.sources._datadog.client import DATADOG_SOURCE_TYPE
 
 from .mocks import (
@@ -128,6 +134,62 @@ class TestBuildTranscript:
 
         assert transcript is not None
         assert transcript.error == "Rate limited"
+
+
+class TestExtractModelOptions:
+    """Tests for _extract_model_options function."""
+
+    def test_extracts_all_options(self) -> None:
+        """Extract temperature, max_tokens, top_p, top_k from metadata."""
+        span = create_llm_span(
+            metadata={
+                "temperature": 0.7,
+                "max_tokens": 1024,
+                "top_p": 0.9,
+                "top_k": 40,
+            }
+        )
+        result = _extract_model_options(span)
+        assert result == {
+            "temperature": 0.7,
+            "max_tokens": 1024,
+            "top_p": 0.9,
+            "top_k": 40,
+        }
+
+    def test_partial_options(self) -> None:
+        """Extract only the options that are present."""
+        span = create_llm_span(metadata={"temperature": 0.5})
+        result = _extract_model_options(span)
+        assert result == {"temperature": 0.5}
+
+    def test_no_options_returns_none(self) -> None:
+        """Return None when no model options are present."""
+        span = create_llm_span(metadata={"other_key": "value"})
+        result = _extract_model_options(span)
+        assert result is None
+
+    def test_missing_metadata_returns_none(self) -> None:
+        """Return None when meta.metadata is absent."""
+        span: dict[str, Any] = {"meta": {}}
+        result = _extract_model_options(span)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_model_options_in_transcript(self) -> None:
+        """model_options are passed through to the transcript."""
+        span = create_llm_span(
+            trace_id="trace-opts",
+            metadata={"temperature": 0.3, "max_tokens": 512},
+        )
+        transcript = await _build_transcript(
+            [span], "my-app", "trace-opts", "datadoghq.com"
+        )
+        assert transcript is not None
+        assert transcript.model_options == {
+            "temperature": 0.3,
+            "max_tokens": 512,
+        }
 
 
 class TestDatadogGenerator:
