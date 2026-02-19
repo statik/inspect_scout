@@ -270,6 +270,7 @@ class TestStrictImport:
     """Tests for DATADOG_STRICT_IMPORT env-var behaviour."""
 
     @pytest.mark.asyncio
+    @pytest.mark.usefixtures("no_fallback_warnings")
     @pytest.mark.parametrize("env_value", ["1", "true", "TRUE"])
     async def test_strict_import_propagates_trace_errors(
         self, monkeypatch: pytest.MonkeyPatch, env_value: str
