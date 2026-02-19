@@ -228,24 +228,27 @@ You can also apply more specific filters:
 
 ```python
 from datetime import datetime, timezone
+from inspect_scout import transcripts_db
+from inspect_scout.sources import datadog
 
-# Filter by time range
-await db.insert(datadog(
-    ml_app="my-llm-app",
-    from_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
-    to_time=datetime(2025, 2, 1, tzinfo=timezone.utc),
-))
+async with transcripts_db("s3://my-transcript-db/") as db:
+    # Filter by time range
+    await db.insert(datadog(
+        ml_app="my-llm-app",
+        from_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        to_time=datetime(2025, 2, 1, tzinfo=timezone.utc),
+    ))
 
-# Fetch a specific trace
-await db.insert(datadog(
-    trace_id="abc123",
-))
+    # Fetch a specific trace
+    await db.insert(datadog(
+        trace_id="abc123",
+    ))
 
-# Filter by tags
-await db.insert(datadog(
-    tags=["env:production", "version:2"],
-    limit=100,
-))
+    # Filter by tags
+    await db.insert(datadog(
+        tags=["env:production", "version:2"],
+        limit=100,
+    ))
 ```
 
 ::: {.callout-note}
