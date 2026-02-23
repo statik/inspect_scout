@@ -149,7 +149,7 @@ def _normalize_messages(
     """
     normalized = []
     for msg in messages:
-        if not isinstance(msg, dict):
+        if not isinstance(msg, dict) or "role" not in msg:
             continue
         new_msg = dict(msg)
 
