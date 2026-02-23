@@ -124,7 +124,8 @@ class DatadogClient:
                 all_spans = all_spans[:limit]
                 break
 
-            next_cursor = result.get("meta", {}).get("page", {}).get("after")
+            next_cursor = (result.get("meta") or {}).get("page") or {}
+            next_cursor = next_cursor.get("after") if isinstance(next_cursor, dict) else None
             if not next_cursor or not data:
                 break
             cursor = next_cursor
