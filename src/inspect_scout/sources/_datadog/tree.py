@@ -1,7 +1,10 @@
 """Trace tree reconstruction from Datadog spans.
 
 Datadog spans use top-level ``span_id``, ``parent_id``, and ``trace_id`` fields
-with nanosecond timestamps (``start_ns``, ``duration``).
+with millisecond timestamps (``start_ns``, ``duration``).
+
+Note: Despite the field name ``start_ns``, the Datadog Export API returns
+values in milliseconds, not nanoseconds.
 """
 
 from dataclasses import dataclass, field
@@ -35,7 +38,7 @@ class SpanNode:
         start_ns = self.span.get("start_ns")
         if start_ns is not None:
             try:
-                return datetime.fromtimestamp(int(start_ns) / 1e9, tz=timezone.utc)
+                return datetime.fromtimestamp(int(start_ns) / 1e3, tz=timezone.utc)
             except (ValueError, TypeError, OverflowError):
                 return None
         return None

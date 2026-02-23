@@ -1,8 +1,8 @@
 """Input/output extraction for Datadog LLM Observability span data.
 
-Datadog provides a normalized message format in ``meta.input.messages``
-and ``meta.output.messages``, with explicit ``model_provider`` fields.
-This makes extraction simpler than other adapters.
+The Datadog Export API provides a flat attribute structure with
+``input.messages`` and ``output.messages`` at the top level, along
+with explicit ``model_provider`` fields.
 """
 
 import json
@@ -29,8 +29,8 @@ async def extract_input_messages(
 ) -> list[ChatMessage]:
     """Extract input messages from a Datadog span.
 
-    Reads ``meta.input.messages`` (array of ``{role, content}``), routing to
-    provider-specific converters. Falls back to ``meta.input.value`` as
+    Reads ``input.messages`` (array of ``{role, content}``), routing to
+    provider-specific converters. Falls back to ``input.value`` as
     a single user message.
 
     Args:
@@ -40,8 +40,7 @@ async def extract_input_messages(
     Returns:
         List of ChatMessage objects
     """
-    meta = span.get("meta") or {}
-    input_data = meta.get("input") or {}
+    input_data = span.get("input") or {}
 
     messages_raw = input_data.get("messages")
     if messages_raw and isinstance(messages_raw, list):
@@ -217,7 +216,7 @@ def _simple_message_conversion(
 async def extract_output(span: dict[str, Any]) -> ModelOutput:
     """Extract output from a Datadog span.
 
-    Reads ``meta.output.messages`` to construct a ModelOutput.
+    Reads ``output.messages`` to construct a ModelOutput.
 
     Args:
         span: Datadog span dictionary
@@ -225,8 +224,7 @@ async def extract_output(span: dict[str, Any]) -> ModelOutput:
     Returns:
         ModelOutput object
     """
-    meta = span.get("meta") or {}
-    output_data = meta.get("output") or {}
+    output_data = span.get("output") or {}
     model_name = get_model_name(span) or "unknown"
 
     messages_raw = output_data.get("messages")
@@ -348,8 +346,7 @@ def extract_tools(span: dict[str, Any]) -> list[ToolInfo]:
     Returns:
         List of ToolInfo objects
     """
-    meta = span.get("meta") or {}
-    metadata = meta.get("metadata") or {}
+    metadata = span.get("metadata") or {}
     tools_data = metadata.get("tools")
 
     if not tools_data or not isinstance(tools_data, list):

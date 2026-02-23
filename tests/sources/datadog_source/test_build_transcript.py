@@ -17,8 +17,8 @@ from inspect_scout.sources._datadog import (
 from inspect_scout.sources._datadog.client import DATADOG_SOURCE_TYPE
 
 from .mocks import (
-    _BASE_NS,
-    _SECOND_NS,
+    _BASE_MS,
+    _SECOND_MS,
     create_agent_span,
     create_llm_span,
     create_tool_call_trace,
@@ -67,22 +67,22 @@ class TestBuildTranscript:
         agent = create_agent_span(
             span_id="root",
             trace_id="trace-1",
-            duration=5 * _SECOND_NS,
-            start_ns=_BASE_NS,
+            duration=5 * _SECOND_MS,
+            start_ns=_BASE_MS,
         )
         child1 = create_llm_span(
             span_id="child-1",
             trace_id="trace-1",
             parent_id="root",
-            duration=2 * _SECOND_NS,
-            start_ns=_BASE_NS + _SECOND_NS,
+            duration=2 * _SECOND_MS,
+            start_ns=_BASE_MS + _SECOND_MS,
         )
         child2 = create_llm_span(
             span_id="child-2",
             trace_id="trace-1",
             parent_id="root",
-            duration=2 * _SECOND_NS,
-            start_ns=_BASE_NS + 3 * _SECOND_NS,
+            duration=2 * _SECOND_MS,
+            start_ns=_BASE_MS + 3 * _SECOND_MS,
         )
 
         transcript = await _build_transcript(
@@ -131,7 +131,7 @@ class TestBuildTranscript:
     async def test_error_span_captured(self) -> None:
         """Transcript captures error from span with error status."""
         span = create_llm_span(trace_id="trace-err", status="error")
-        span["meta"]["error"] = {"message": "Rate limited"}
+        span["error"] = {"message": "Rate limited"}
         transcript = await _build_transcript(
             [span], "my-app", "trace-err", "datadoghq.com"
         )
@@ -175,8 +175,8 @@ class TestExtractModelOptions:
         assert result is None
 
     def test_missing_metadata_returns_none(self) -> None:
-        """Return None when meta.metadata is absent."""
-        span: dict[str, Any] = {"meta": {}}
+        """Return None when metadata is absent."""
+        span: dict[str, Any] = {}
         result = _extract_model_options(span)
         assert result is None
 
@@ -364,10 +364,8 @@ class TestExtractRootMessages:
     def test_extracts_input_and_output(self) -> None:
         """Extract user and assistant messages from root span."""
         span: dict[str, Any] = {
-            "meta": {
-                "input": {"value": "Hello"},
-                "output": {"value": "Hi there!"},
-            },
+            "input": {"value": "Hello"},
+            "output": {"value": "Hi there!"},
         }
         messages = _extract_root_messages(span)
         assert len(messages) == 2
@@ -377,23 +375,15 @@ class TestExtractRootMessages:
     def test_input_only(self) -> None:
         """Extract only input when output is missing."""
         span: dict[str, Any] = {
-            "meta": {
-                "input": {"value": "Hello"},
-                "output": {},
-            },
+            "input": {"value": "Hello"},
+            "output": {},
         }
         messages = _extract_root_messages(span)
         assert len(messages) == 1
         assert messages[0].content == "Hello"
 
-    def test_empty_meta(self) -> None:
-        """Return empty list when meta has no input/output."""
-        span: dict[str, Any] = {"meta": {}}
-        messages = _extract_root_messages(span)
-        assert messages == []
-
-    def test_no_meta_key(self) -> None:
-        """Return empty list when span has no meta."""
+    def test_empty_input_output(self) -> None:
+        """Return empty list when span has no input/output."""
         span: dict[str, Any] = {}
         messages = _extract_root_messages(span)
         assert messages == []
@@ -403,8 +393,8 @@ class TestRootDuration:
     """Tests for _root_duration function."""
 
     def test_valid_duration(self) -> None:
-        """Convert nanosecond duration to seconds."""
-        span: dict[str, Any] = {"duration": 5_000_000_000}
+        """Convert millisecond duration to seconds."""
+        span: dict[str, Any] = {"duration": 5_000}
         assert _root_duration(span) == pytest.approx(5.0)
 
     def test_missing_duration_returns_none(self) -> None:
@@ -458,7 +448,7 @@ class TestExtractMetadataSuccess:
     def test_bool_success_preserved(self) -> None:
         """Boolean success values are preserved."""
         span: dict[str, Any] = {
-            "meta": {"metadata": {"success": True}},
+            "metadata": {"success": True},
             "tags": [],
         }
         metadata = _extract_metadata(span)
@@ -467,7 +457,7 @@ class TestExtractMetadataSuccess:
     def test_string_success_coerced_to_bool(self) -> None:
         """String 'true' is coerced to bool True."""
         span: dict[str, Any] = {
-            "meta": {"metadata": {"success": "true"}},
+            "metadata": {"success": "true"},
             "tags": [],
         }
         metadata = _extract_metadata(span)
@@ -476,7 +466,7 @@ class TestExtractMetadataSuccess:
     def test_string_false_coerced_to_false(self) -> None:
         """String 'false' is coerced to bool False."""
         span: dict[str, Any] = {
-            "meta": {"metadata": {"success": "false"}},
+            "metadata": {"success": "false"},
             "tags": [],
         }
         metadata = _extract_metadata(span)
@@ -485,7 +475,7 @@ class TestExtractMetadataSuccess:
     def test_string_zero_coerced_to_false(self) -> None:
         """String '0' is coerced to bool False."""
         span: dict[str, Any] = {
-            "meta": {"metadata": {"success": "0"}},
+            "metadata": {"success": "0"},
             "tags": [],
         }
         metadata = _extract_metadata(span)
@@ -494,7 +484,7 @@ class TestExtractMetadataSuccess:
     def test_int_success_coerced_to_bool(self) -> None:
         """Integer 1 is coerced to bool True."""
         span: dict[str, Any] = {
-            "meta": {"metadata": {"success": 1}},
+            "metadata": {"success": 1},
             "tags": [],
         }
         metadata = _extract_metadata(span)
@@ -503,7 +493,7 @@ class TestExtractMetadataSuccess:
     def test_zero_success_coerced_to_false(self) -> None:
         """Integer 0 is coerced to bool False."""
         span: dict[str, Any] = {
-            "meta": {"metadata": {"success": 0}},
+            "metadata": {"success": 0},
             "tags": [],
         }
         metadata = _extract_metadata(span)
@@ -512,7 +502,7 @@ class TestExtractMetadataSuccess:
     def test_none_success_preserved(self) -> None:
         """None success value is preserved."""
         span: dict[str, Any] = {
-            "meta": {"metadata": {"success": None}},
+            "metadata": {"success": None},
             "tags": [],
         }
         metadata = _extract_metadata(span)
@@ -599,7 +589,7 @@ class TestBuildTranscriptEmptySpans:
         span: dict[str, Any] = {
             "span_id": "",
             "trace_id": "trace-1",
-            "meta": {"kind": "llm"},
+            "span_kind": "llm",
         }
         result = await _build_transcript(
             [span], "my-app", "trace-1", "datadoghq.com"

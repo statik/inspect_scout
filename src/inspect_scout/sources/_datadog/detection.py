@@ -1,6 +1,6 @@
 """Provider detection for Datadog LLM Observability spans.
 
-Datadog provides explicit `model_provider` and `meta.kind` fields,
+Datadog provides explicit ``model_provider`` and ``span_kind`` fields,
 making detection straightforward compared to other adapters.
 """
 
@@ -83,8 +83,7 @@ def is_llm_span(span: dict[str, Any]) -> bool:
     Returns:
         True if this is an LLM span
     """
-    meta = span.get("meta") or {}
-    return str(meta.get("kind", "")).lower() == "llm"
+    return str(span.get("span_kind", "")).lower() == "llm"
 
 
 def is_tool_span(span: dict[str, Any]) -> bool:
@@ -96,8 +95,7 @@ def is_tool_span(span: dict[str, Any]) -> bool:
     Returns:
         True if this is a tool span
     """
-    meta = span.get("meta") or {}
-    return str(meta.get("kind", "")).lower() == "tool"
+    return str(span.get("span_kind", "")).lower() == "tool"
 
 
 def is_agent_span(span: dict[str, Any]) -> bool:
@@ -109,5 +107,4 @@ def is_agent_span(span: dict[str, Any]) -> bool:
     Returns:
         True if this is an agent, workflow, or task span
     """
-    meta = span.get("meta") or {}
-    return str(meta.get("kind", "")).lower() in ("agent", "workflow", "task")
+    return str(span.get("span_kind", "")).lower() in ("agent", "workflow", "task")

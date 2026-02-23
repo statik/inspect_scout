@@ -230,7 +230,8 @@ async def _build_transcript(
     start_ns = root_span.get("start_ns")
     if start_ns is not None:
         try:
-            dt = datetime.fromtimestamp(int(start_ns) / 1e9, tz=timezone.utc)
+            # start_ns is milliseconds despite the field name
+            dt = datetime.fromtimestamp(int(start_ns) / 1e3, tz=timezone.utc)
             date = dt.isoformat()
         except (ValueError, TypeError, OverflowError):
             pass
@@ -238,7 +239,7 @@ async def _build_transcript(
     error = None
     for span in ordered_spans:
         if str(span.get("status", "")).lower() == "error":
-            error_meta = (span.get("meta") or {}).get("error") or {}
+            error_meta = span.get("error") or {}
             error = error_meta.get("message") or "Unknown error"
             break
 
@@ -285,7 +286,8 @@ def _root_duration(root_span: dict[str, Any]) -> float | None:
     duration = root_span.get("duration")
     if duration is not None:
         try:
-            return int(duration) / 1e9
+            # duration is milliseconds despite the naming convention
+            return int(duration) / 1e3
         except (ValueError, TypeError):
             pass
     return None
@@ -318,14 +320,13 @@ def _extract_root_messages(span: dict[str, Any]) -> list[ChatMessage]:
         List of ChatMessage objects
     """
     messages: list[ChatMessage] = []
-    meta = span.get("meta") or {}
 
-    input_data = meta.get("input") or {}
+    input_data = span.get("input") or {}
     input_value = input_data.get("value")
     if input_value:
         messages.append(ChatMessageUser(content=str(input_value)))
 
-    output_data = meta.get("output") or {}
+    output_data = span.get("output") or {}
     output_value = output_data.get("value")
     if output_value:
         messages.append(ChatMessageAssistant(content=str(output_value)))
@@ -348,8 +349,7 @@ def _extract_metadata(span: dict[str, Any]) -> dict[str, Any]:
     if provider != Provider.UNKNOWN:
         metadata["provider"] = provider.value
 
-    meta = span.get("meta") or {}
-    kind = meta.get("kind")
+    kind = span.get("span_kind")
     if kind:
         metadata["span_kind"] = kind
 
@@ -357,7 +357,7 @@ def _extract_metadata(span: dict[str, Any]) -> dict[str, Any]:
     if isinstance(tags, list) and tags:
         metadata["tags"] = tags
 
-    span_metadata = meta.get("metadata") or {}
+    span_metadata = span.get("metadata") or {}
     for key in ["agent", "agent_args", "score"]:
         if key in span_metadata:
             metadata[key] = span_metadata[key]
@@ -371,7 +371,7 @@ def _extract_metadata(span: dict[str, Any]) -> dict[str, Any]:
         else:
             metadata["success"] = bool(val)
 
-    evaluations = meta.get("evaluations")
+    evaluations = span.get("evaluations")
     if evaluations:
         metadata["evaluations"] = evaluations
 
@@ -387,8 +387,7 @@ def _extract_model_options(span: dict[str, Any]) -> dict[str, Any] | None:
     Returns:
         Model options dict or None
     """
-    meta = span.get("meta") or {}
-    metadata = meta.get("metadata") or {}
+    metadata = span.get("metadata") or {}
 
     options: dict[str, Any] = {}
     for key in ["temperature", "max_tokens", "top_p", "top_k"]:

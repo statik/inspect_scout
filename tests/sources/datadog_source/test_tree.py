@@ -8,8 +8,8 @@ from inspect_scout.sources._datadog.tree import (
 )
 
 from .mocks import (
-    _BASE_NS,
-    _SECOND_NS,
+    _BASE_MS,
+    _SECOND_MS,
     create_agent_span,
     create_llm_span,
     create_multiturn_trace,
@@ -35,13 +35,13 @@ class TestBuildSpanTree:
         parent = create_agent_span(
             span_id="parent",
             trace_id="trace-1",
-            start_ns=_BASE_NS,
+            start_ns=_BASE_MS,
         )
         child = create_llm_span(
             span_id="child",
             trace_id="trace-1",
             parent_id="parent",
-            start_ns=_BASE_NS + _SECOND_NS,
+            start_ns=_BASE_MS + _SECOND_MS,
         )
 
         roots = build_span_tree([parent, child])
@@ -56,19 +56,19 @@ class TestBuildSpanTree:
         parent = create_agent_span(
             span_id="parent",
             trace_id="trace-1",
-            start_ns=_BASE_NS,
+            start_ns=_BASE_MS,
         )
         child1 = create_llm_span(
             span_id="child1",
             trace_id="trace-1",
             parent_id="parent",
-            start_ns=_BASE_NS + 2 * _SECOND_NS,
+            start_ns=_BASE_MS + 2 * _SECOND_MS,
         )
         child2 = create_tool_span(
             span_id="child2",
             trace_id="trace-1",
             parent_id="parent",
-            start_ns=_BASE_NS + _SECOND_NS,
+            start_ns=_BASE_MS + _SECOND_MS,
         )
 
         roots = build_span_tree([parent, child1, child2])
@@ -82,12 +82,12 @@ class TestBuildSpanTree:
         span1 = create_llm_span(
             span_id="span1",
             trace_id="trace-1",
-            start_ns=_BASE_NS + _SECOND_NS,
+            start_ns=_BASE_MS + _SECOND_MS,
         )
         span2 = create_llm_span(
             span_id="span2",
             trace_id="trace-1",
-            start_ns=_BASE_NS,
+            start_ns=_BASE_MS,
         )
 
         roots = build_span_tree([span1, span2])
@@ -108,9 +108,9 @@ class TestBuildSpanTree:
         assert len(roots) == 1
         assert roots[0].span_id == "orphan"
 
-    def test_nanosecond_timestamps_converted(self) -> None:
-        """SpanNode.start_time converts nanoseconds to datetime."""
-        span = create_llm_span(start_ns=1700000000000000000)
+    def test_millisecond_timestamps_converted(self) -> None:
+        """SpanNode.start_time converts milliseconds to datetime."""
+        span = create_llm_span(start_ns=1700000000000)
         roots = build_span_tree([span])
 
         node = roots[0]
@@ -146,19 +146,19 @@ class TestFlattenTreeChronological:
         parent = create_agent_span(
             span_id="parent",
             trace_id="trace-1",
-            start_ns=_BASE_NS,
+            start_ns=_BASE_MS,
         )
         child = create_llm_span(
             span_id="child",
             trace_id="trace-1",
             parent_id="parent",
-            start_ns=_BASE_NS + _SECOND_NS,
+            start_ns=_BASE_MS + _SECOND_MS,
         )
         grandchild = create_tool_span(
             span_id="grandchild",
             trace_id="trace-1",
             parent_id="child",
-            start_ns=_BASE_NS + 2 * _SECOND_NS,
+            start_ns=_BASE_MS + 2 * _SECOND_MS,
         )
 
         roots = build_span_tree([parent, child, grandchild])

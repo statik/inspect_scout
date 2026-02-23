@@ -101,8 +101,8 @@ class TestIsLLMSpan:
         assert is_llm_span(span) is False
 
     def test_case_insensitive(self) -> None:
-        """meta.kind comparison is case-insensitive."""
-        span: dict[str, Any] = {"meta": {"kind": "LLM"}}
+        """span_kind comparison is case-insensitive."""
+        span: dict[str, Any] = {"span_kind": "LLM"}
         assert is_llm_span(span) is True
 
 

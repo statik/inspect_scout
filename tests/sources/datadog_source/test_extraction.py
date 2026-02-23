@@ -39,9 +39,9 @@ class TestExtractInputMessages:
 
     @pytest.mark.asyncio
     async def test_extract_from_value_fallback(self) -> None:
-        """Fall back to meta.input.value when no messages."""
+        """Fall back to input.value when no messages."""
         span = create_llm_span()
-        span["meta"]["input"] = {"value": "What is 2+2?"}
+        span["input"] = {"value": "What is 2+2?"}
         messages = await extract_input_messages(span, Provider.OPENAI)
 
         assert len(messages) == 1
@@ -52,7 +52,7 @@ class TestExtractInputMessages:
     async def test_extract_empty_input(self) -> None:
         """Return empty list when no input data."""
         span = create_llm_span()
-        span["meta"]["input"] = {}
+        span["input"] = {}
         messages = await extract_input_messages(span, Provider.OPENAI)
 
         assert messages == []
@@ -104,9 +104,9 @@ class TestExtractOutput:
 
     @pytest.mark.asyncio
     async def test_extract_output_value_fallback(self) -> None:
-        """Fall back to meta.output.value."""
+        """Fall back to output.value."""
         span = create_llm_span()
-        span["meta"]["output"] = {"value": "Simple response"}
+        span["output"] = {"value": "Simple response"}
         output = await extract_output(span)
 
         assert output is not None

@@ -3,7 +3,7 @@
 import pytest
 from inspect_ai.event import ModelEvent, SpanBeginEvent, SpanEndEvent, ToolEvent
 from inspect_scout.sources._datadog.events import (
-    _ns_to_datetime,
+    _ms_to_datetime,
     spans_to_events,
     to_model_event,
     to_span_begin_event,
@@ -12,8 +12,8 @@ from inspect_scout.sources._datadog.events import (
 )
 
 from .mocks import (
-    _BASE_NS,
-    _SECOND_NS,
+    _BASE_MS,
+    _SECOND_MS,
     create_agent_span,
     create_llm_span,
     create_multiturn_trace,
@@ -24,12 +24,12 @@ from .mocks import (
 pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
 
 
-class TestNsToDatetime:
-    """Tests for _ns_to_datetime helper."""
+class TestMsToDatetime:
+    """Tests for _ms_to_datetime helper."""
 
-    def test_converts_nanoseconds(self) -> None:
-        """Convert nanosecond timestamp to UTC datetime."""
-        dt = _ns_to_datetime(1700000000000000000)
+    def test_converts_milliseconds(self) -> None:
+        """Convert millisecond timestamp to UTC datetime."""
+        dt = _ms_to_datetime(1700000000000)
         assert dt.year == 2023
         assert dt.month == 11
 
@@ -37,7 +37,7 @@ class TestNsToDatetime:
         """Return UTC-aware datetime.min for None input."""
         from datetime import datetime, timezone
 
-        dt = _ns_to_datetime(None)
+        dt = _ms_to_datetime(None)
         assert dt == datetime.min.replace(tzinfo=timezone.utc)
         assert dt.tzinfo is not None
 
@@ -45,7 +45,7 @@ class TestNsToDatetime:
         """Return UTC-aware datetime.min for invalid input."""
         from datetime import datetime, timezone
 
-        dt = _ns_to_datetime("not-a-number")
+        dt = _ms_to_datetime("not-a-number")
         assert dt == datetime.min.replace(tzinfo=timezone.utc)
         assert dt.tzinfo is not None
 
@@ -215,11 +215,11 @@ class TestSpansToEvents:
         """Events should be sorted by timestamp."""
         span1 = create_llm_span(
             span_id="span-1",
-            start_ns=_BASE_NS + 10 * _SECOND_NS,
+            start_ns=_BASE_MS + 10 * _SECOND_MS,
         )
         span2 = create_llm_span(
             span_id="span-2",
-            start_ns=_BASE_NS,
+            start_ns=_BASE_MS,
         )
 
         events = await spans_to_events([span1, span2])

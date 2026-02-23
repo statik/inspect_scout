@@ -1,16 +1,17 @@
 """Mock Datadog span factories for testing.
 
 Provides factory functions that create Datadog span dictionaries matching
-the Export API's ``data[].attributes`` structure.
+the Export API's ``data[].attributes`` flat structure.
 """
 
 from typing import Any
 
-# Base timestamp in nanoseconds (2023-11-14T22:13:20Z)
-_BASE_NS = 1700000000000000000
+# Base timestamp in milliseconds (2023-11-14T22:13:20Z)
+# The Datadog Export API field is named ``start_ns`` but returns milliseconds.
+_BASE_MS = 1_700_000_000_000
 
-# 1 second in nanoseconds
-_SECOND_NS = 1_000_000_000
+# 1 second in milliseconds
+_SECOND_MS = 1_000
 
 
 def create_llm_span(
@@ -27,8 +28,8 @@ def create_llm_span(
     input_tokens: int = 10,
     output_tokens: int = 5,
     total_tokens: int | None = None,
-    start_ns: int = _BASE_NS,
-    duration: int = _SECOND_NS,
+    start_ns: int = _BASE_MS,
+    duration: int = _SECOND_MS,
     status: str = "ok",
     metadata: dict[str, Any] | None = None,
     tags: list[str] | None = None,
@@ -49,8 +50,8 @@ def create_llm_span(
         input_tokens: Input token count
         output_tokens: Output token count
         total_tokens: Total token count (defaults to input + output)
-        start_ns: Start time in nanoseconds
-        duration: Duration in nanoseconds
+        start_ns: Start time in milliseconds (field name matches API)
+        duration: Duration in milliseconds
         status: Span status
         metadata: Additional metadata
         tags: Span tags
@@ -65,13 +66,13 @@ def create_llm_span(
     if total_tokens is None:
         total_tokens = input_tokens + output_tokens
 
-    meta_input: dict[str, Any] = {"messages": input_messages}
+    span_input: dict[str, Any] = {"messages": input_messages}
     if input_value:
-        meta_input["value"] = input_value
+        span_input["value"] = input_value
 
-    meta_output: dict[str, Any] = {"messages": output_messages}
+    span_output: dict[str, Any] = {"messages": output_messages}
     if output_value:
-        meta_output["value"] = output_value
+        span_output["value"] = output_value
 
     return {
         "span_id": span_id,
@@ -81,14 +82,12 @@ def create_llm_span(
         "start_ns": start_ns,
         "duration": duration,
         "status": status,
+        "span_kind": "llm",
         "model_name": model_name,
         "model_provider": model_provider,
-        "meta": {
-            "kind": "llm",
-            "input": meta_input,
-            "output": meta_output,
-            "metadata": metadata or {"temperature": 0.7},
-        },
+        "input": span_input,
+        "output": span_output,
+        "metadata": metadata or {"temperature": 0.7},
         "metrics": {
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
@@ -105,8 +104,8 @@ def create_tool_span(
     tool_name: str = "get_weather",
     arguments: dict[str, Any] | None = None,
     result: str | None = None,
-    start_ns: int = _BASE_NS,
-    duration: int = _SECOND_NS // 2,
+    start_ns: int = _BASE_MS,
+    duration: int = _SECOND_MS // 2,
     status: str = "ok",
     error_message: str | None = None,
     tags: list[str] | None = None,
@@ -120,8 +119,8 @@ def create_tool_span(
         tool_name: Tool function name
         arguments: Tool arguments
         result: Tool result
-        start_ns: Start time in nanoseconds
-        duration: Duration in nanoseconds
+        start_ns: Start time in milliseconds (field name matches API)
+        duration: Duration in milliseconds
         status: Span status
         error_message: Error message (sets status to "error")
         tags: Span tags
@@ -134,17 +133,7 @@ def create_tool_span(
     if result is None:
         result = "Sunny, 72F"
 
-    meta: dict[str, Any] = {
-        "kind": "tool",
-        "input": {"value": arguments},
-        "output": {"value": result},
-    }
-
-    if error_message:
-        status = "error"
-        meta["error"] = {"message": error_message}
-
-    return {
+    span: dict[str, Any] = {
         "span_id": span_id,
         "trace_id": trace_id,
         "parent_id": parent_id,
@@ -152,10 +141,18 @@ def create_tool_span(
         "start_ns": start_ns,
         "duration": duration,
         "status": status,
-        "meta": meta,
+        "span_kind": "tool",
+        "input": {"value": arguments},
+        "output": {"value": result},
         "metrics": {},
         "tags": tags or ["ml_app:my-app"],
     }
+
+    if error_message:
+        span["status"] = "error"
+        span["error"] = {"message": error_message}
+
+    return span
 
 
 def create_agent_span(
@@ -164,8 +161,8 @@ def create_agent_span(
     parent_id: str = "",
     agent_name: str = "assistant",
     kind: str = "agent",
-    start_ns: int = _BASE_NS,
-    duration: int = 5 * _SECOND_NS,
+    start_ns: int = _BASE_MS,
+    duration: int = 5 * _SECOND_MS,
     status: str = "ok",
     tags: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -177,8 +174,8 @@ def create_agent_span(
         parent_id: Parent span ID
         agent_name: Agent name
         kind: Span kind (agent, workflow, task)
-        start_ns: Start time in nanoseconds
-        duration: Duration in nanoseconds
+        start_ns: Start time in milliseconds (field name matches API)
+        duration: Duration in milliseconds
         status: Span status
         tags: Span tags
 
@@ -193,11 +190,9 @@ def create_agent_span(
         "start_ns": start_ns,
         "duration": duration,
         "status": status,
-        "meta": {
-            "kind": kind,
-            "input": {"value": "Hello!"},
-            "output": {"value": "Hello! How can I help you?"},
-        },
+        "span_kind": kind,
+        "input": {"value": "Hello!"},
+        "output": {"value": "Hello! How can I help you?"},
         "metrics": {},
         "tags": tags or ["ml_app:my-app"],
     }
@@ -231,7 +226,7 @@ def create_multiturn_trace(
         ],
         input_tokens=30,
         output_tokens=10,
-        start_ns=_BASE_NS,
+        start_ns=_BASE_MS,
     )
     span2 = create_llm_span(
         span_id="span-turn-2",
@@ -248,7 +243,7 @@ def create_multiturn_trace(
         ],
         input_tokens=50,
         output_tokens=10,
-        start_ns=_BASE_NS + _SECOND_NS,
+        start_ns=_BASE_MS + _SECOND_MS,
     )
     span3 = create_llm_span(
         span_id="span-turn-3",
@@ -267,7 +262,7 @@ def create_multiturn_trace(
         ],
         input_tokens=70,
         output_tokens=10,
-        start_ns=_BASE_NS + 2 * _SECOND_NS,
+        start_ns=_BASE_MS + 2 * _SECOND_MS,
     )
     return [span1, span2, span3]
 
@@ -288,7 +283,7 @@ def create_tool_call_trace(
     agent = create_agent_span(
         span_id="span-agent-root",
         trace_id=trace_id,
-        start_ns=_BASE_NS,
+        start_ns=_BASE_MS,
     )
     llm1 = create_llm_span(
         span_id="span-llm-1",
@@ -314,7 +309,7 @@ def create_tool_call_trace(
                 ],
             }
         ],
-        start_ns=_BASE_NS + _SECOND_NS // 10,
+        start_ns=_BASE_MS + _SECOND_MS // 10,
     )
     tool = create_tool_span(
         span_id="span-tool-1",
@@ -323,7 +318,7 @@ def create_tool_call_trace(
         tool_name="get_weather",
         arguments={"city": "San Francisco"},
         result="Sunny, 72F",
-        start_ns=_BASE_NS + 2 * _SECOND_NS // 10,
+        start_ns=_BASE_MS + 2 * _SECOND_MS // 10,
     )
     llm2 = create_llm_span(
         span_id="span-llm-2",
@@ -341,6 +336,6 @@ def create_tool_call_trace(
                 "content": "The weather in San Francisco is sunny, 72F.",
             }
         ],
-        start_ns=_BASE_NS + 3 * _SECOND_NS // 10,
+        start_ns=_BASE_MS + 3 * _SECOND_MS // 10,
     )
     return [agent, llm1, tool, llm2]

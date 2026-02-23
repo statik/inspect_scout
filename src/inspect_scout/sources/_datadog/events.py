@@ -1,9 +1,9 @@
 """Event conversion for Datadog LLM Observability spans.
 
 Converts Datadog spans to Scout event types:
-- LLM spans (meta.kind="llm") -> ModelEvent
-- Tool spans (meta.kind="tool") -> ToolEvent
-- Agent spans (meta.kind in agent/workflow/task) -> SpanBeginEvent + SpanEndEvent
+- LLM spans (span_kind="llm") -> ModelEvent
+- Tool spans (span_kind="tool") -> ToolEvent
+- Agent spans (span_kind in agent/workflow/task) -> SpanBeginEvent + SpanEndEvent
 """
 
 import json
@@ -32,18 +32,21 @@ from .extraction import extract_input_messages, extract_output, extract_tools
 from .tree import DATETIME_MIN_UTC
 
 
-def _ns_to_datetime(ns: Any) -> datetime:
-    """Convert nanosecond timestamp to datetime.
+def _ms_to_datetime(ms: Any) -> datetime:
+    """Convert millisecond timestamp to datetime.
+
+    The Datadog Export API field is named ``start_ns`` but actually
+    contains milliseconds (13-digit values, not 19-digit nanoseconds).
 
     Args:
-        ns: Nanosecond timestamp (int or None)
+        ms: Millisecond timestamp (int or None)
 
     Returns:
         UTC datetime, or datetime.min (UTC) if conversion fails
     """
-    if ns is not None:
+    if ms is not None:
         try:
-            return datetime.fromtimestamp(int(ns) / 1e9, tz=timezone.utc)
+            return datetime.fromtimestamp(int(ms) / 1e3, tz=timezone.utc)
         except (ValueError, TypeError, OverflowError):
             pass
     return DATETIME_MIN_UTC
@@ -51,17 +54,17 @@ def _ns_to_datetime(ns: Any) -> datetime:
 
 def _get_timestamp(span: dict[str, Any]) -> datetime:
     """Get start timestamp from a Datadog span."""
-    return _ns_to_datetime(span.get("start_ns"))
+    return _ms_to_datetime(span.get("start_ns"))
 
 
 def _get_end_timestamp(span: dict[str, Any]) -> datetime:
     """Get end timestamp from a Datadog span (start_ns + duration)."""
-    start_ns = span.get("start_ns")
+    start_ms = span.get("start_ns")
     duration = span.get("duration")
-    if start_ns is not None and duration is not None:
+    if start_ms is not None and duration is not None:
         try:
-            end_ns = int(start_ns) + int(duration)
-            return datetime.fromtimestamp(end_ns / 1e9, tz=timezone.utc)
+            end_ms = int(start_ms) + int(duration)
+            return datetime.fromtimestamp(end_ms / 1e3, tz=timezone.utc)
         except (ValueError, TypeError, OverflowError):
             pass
     return DATETIME_MIN_UTC
@@ -81,8 +84,7 @@ async def to_model_event(span: dict[str, Any]) -> ModelEvent:
     output = await extract_output(span)
     model_name = get_model_name(span) or "unknown"
 
-    meta = span.get("meta") or {}
-    metadata = meta.get("metadata") or {}
+    metadata = span.get("metadata") or {}
     config = GenerateConfig(
         temperature=metadata.get("temperature"),
         max_tokens=metadata.get("max_tokens"),
@@ -111,13 +113,12 @@ def to_tool_event(span: dict[str, Any]) -> ToolEvent:
     Returns:
         ToolEvent object
     """
-    meta = span.get("meta") or {}
-    input_data = meta.get("input") or {}
-    output_data = meta.get("output") or {}
+    input_data = span.get("input") or {}
+    output_data = span.get("output") or {}
 
     error = None
     if str(span.get("status", "")).lower() == "error":
-        error_meta = meta.get("error") or {}
+        error_meta = span.get("error") or {}
         error = ToolCallError(
             type="unknown",
             message=error_meta.get("message") or "Unknown error",
