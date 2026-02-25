@@ -8,15 +8,17 @@ You can populate a transcript database in a variety of ways depending on where y
 
 1. [Inspect Logs](#inspect-logs): Read transcript data from Inspect eval log files.
 
-2. [Arize Phoenix](#arize-phoenix), [LangSmith](#langsmith), and [Logfire](#logfire): Read transcript data from LLM observability platforms.
+2. [Arize Phoenix](#arize-phoenix), [LangSmith](#langsmith), [Logfire](#logfire), and [Datadog](#datadog): Read transcript data from LLM observability platforms.
 
 3. [Claude Code](#claude-code): Read transcript data from local Claude Code sessions.
 
-4. [Transcript API](#transcript-api): Python API for creating and inserting transcripts.
+4. [DataDog](#datadog): Read transcript data from local Claude Code sessions.
 
-5. [Arrow Import](#arrow-import): Efficient direct insertion using `RecordBatchReader`.
+5. [Transcript API](#transcript-api): Python API for creating and inserting transcripts.
 
-6. [Parquet Data Lake](#parquet-data-lake): Use an existing data lake not created using Inspect Scout.
+6. [Arrow Import](#arrow-import): Efficient direct insertion using `RecordBatchReader`.
+
+7. [Parquet Data Lake](#parquet-data-lake): Use an existing data lake not created using Inspect Scout.
 
 
 We'll cover each of these in turn below. Before proceeding though you should be sure to familiarize yourself with the [Database Schema](db_schema.qmd) and make a plan for how you want to map your data into it.
@@ -206,6 +208,54 @@ Claude Code transcripts are mapped to the database schema as follows:
 | `task_id` | Session slug (conversation summary) |
 | `agent` | `"claude-code"` |
 
+## Datadog
+
+[Datadog LLM Observability](https://www.datadoghq.com/product/llm-observability/) provides monitoring and tracing for LLM applications. Scout can import transcripts from Datadog LLM Observability traces via the [Export API](https://docs.datadoghq.com/llm_observability/setup/api/), using httpx directly with no SDK dependency.
+
+Use the `datadog()` transcript source to import traces. You can filter by `ml_app`, time range, specific trace ID, span kind, or tags:
+
+```python
+from inspect_scout import transcripts_db
+from inspect_scout.sources import datadog
+
+async with transcripts_db("s3://my-transcript-db/") as db:
+    await db.insert(datadog(
+        ml_app="my-llm-app",
+    ))
+```
+
+You can also apply more specific filters:
+
+```python
+from datetime import datetime, timezone
+from inspect_scout import transcripts_db
+from inspect_scout.sources import datadog
+
+async with transcripts_db("s3://my-transcript-db/") as db:
+    # Filter by time range
+    await db.insert(datadog(
+        ml_app="my-llm-app",
+        from_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        to_time=datetime(2025, 2, 1, tzinfo=timezone.utc),
+    ))
+
+    # Fetch a specific trace
+    await db.insert(datadog(
+        trace_id="abc123",
+    ))
+
+    # Filter by tags
+    await db.insert(datadog(
+        tags=["env:production", "version:2"],
+        limit=100,
+    ))
+```
+
+::: {.callout-note}
+## Authentication
+
+Set the `DD_API_KEY` and `DD_APP_KEY` environment variables to authenticate with Datadog. Both an API key and an application key are required. Optionally set `DD_SITE` to specify your Datadog region (defaults to `datadoghq.com`). You can create keys from [Datadog Organization Settings](https://app.datadoghq.com/organization-settings/api-keys).
+:::
 
 ## Transcript API
 
