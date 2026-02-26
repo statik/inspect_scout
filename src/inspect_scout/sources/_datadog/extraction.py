@@ -169,11 +169,11 @@ def _normalize_messages(
                         if "function" not in new_tc and "name" in new_tc:
                             args = new_tc.pop("args", None)
                             raw_arguments = new_tc.pop("arguments", None)
-                            if not args:
+                            if args is None or args == "" or args == {}:
                                 args = raw_arguments
                             if isinstance(args, dict):
                                 args = json.dumps(args)
-                            elif not args:
+                            elif args is None or args == "":
                                 args = "{}"
                             elif not isinstance(args, str):
                                 args = json.dumps(args)

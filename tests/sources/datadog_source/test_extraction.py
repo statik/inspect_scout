@@ -266,11 +266,13 @@ class TestNormalizeMessages:
         [
             ([1, 2, 3], "[1, 2, 3]"),
             (42, "42"),
+            (0, "0"),
             # Note: bool is a subtype of int in Python (isinstance(True, int)
             # is True), so branch ordering in _normalize_messages matters.
             (True, "true"),
+            (False, "false"),
         ],
-        ids=["list", "int", "bool"],
+        ids=["list", "int", "zero", "bool-true", "bool-false"],
     )
     def test_non_string_non_dict_args_serialized(
         self, args_value: object, expected: str
