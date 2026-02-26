@@ -1,5 +1,6 @@
 """Tests for _build_transcript and datadog() with mocked client."""
 
+from collections.abc import AsyncGenerator, Callable
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -26,6 +27,30 @@ from .mocks import (
     create_multiturn_trace,
     create_tool_call_trace,
 )
+
+
+def _pages(
+    *page_lists: list[dict[str, Any]],
+) -> Callable[..., AsyncGenerator[list[dict[str, Any]], None]]:
+    """Create a mock ``iter_span_pages`` that yields the given pages."""
+
+    async def _iter(**kwargs: Any) -> AsyncGenerator[list[dict[str, Any]], None]:
+        for page in page_lists:
+            yield page
+
+    return _iter
+
+
+def _error_pages(
+    error: Exception,
+) -> Callable[..., AsyncGenerator[list[dict[str, Any]], None]]:
+    """Create a mock ``iter_span_pages`` that raises immediately."""
+
+    async def _iter(**kwargs: Any) -> AsyncGenerator[list[dict[str, Any]], None]:
+        raise error
+        yield []  # unreachable; makes this an async generator
+
+    return _iter
 
 
 class TestBuildTranscript:
@@ -229,7 +254,7 @@ class TestDatadogGenerator:
         ]
 
         mock_client = AsyncMock()
-        mock_client.list_spans = AsyncMock(return_value=spans)
+        mock_client.iter_span_pages = _pages(spans)
         mock_client.site = "datadoghq.com"
         mock_client.aclose = AsyncMock()
 
@@ -254,7 +279,7 @@ class TestDatadogGenerator:
         ]
 
         mock_client = AsyncMock()
-        mock_client.list_spans = AsyncMock(return_value=spans)
+        mock_client.iter_span_pages = _pages(spans)
         mock_client.site = "datadoghq.com"
         mock_client.aclose = AsyncMock()
 
@@ -273,7 +298,7 @@ class TestDatadogGenerator:
     async def test_api_error_propagates(self) -> None:
         """API errors propagate instead of being swallowed."""
         mock_client = AsyncMock()
-        mock_client.list_spans = AsyncMock(side_effect=ValueError("Bad request"))
+        mock_client.iter_span_pages = _error_pages(ValueError("Bad request"))
         mock_client.site = "datadoghq.com"
         mock_client.aclose = AsyncMock()
 
@@ -303,9 +328,8 @@ class TestStrictImport:
         spans = [create_llm_span(span_id="s1", trace_id="t1")]
 
         mock_client = AsyncMock()
-        mock_client.list_spans = AsyncMock(return_value=spans)
+        mock_client.iter_span_pages = _pages(spans)
         mock_client.site = "datadoghq.com"
-        mock_client.aclose = AsyncMock()
 
         with patch(
             "inspect_scout.sources._datadog._build_transcript",
@@ -350,9 +374,8 @@ class TestStrictImport:
         ]
 
         mock_client = AsyncMock()
-        mock_client.list_spans = AsyncMock(return_value=spans)
+        mock_client.iter_span_pages = _pages(spans)
         mock_client.site = "datadoghq.com"
-        mock_client.aclose = AsyncMock()
 
         with patch(
             "inspect_scout.sources._datadog._build_transcript",
@@ -527,55 +550,10 @@ class TestExtractMetadataSuccess:
         assert metadata["success"] is None
 
 
-class TestFromQueryForwardsLimit:
-    """Tests that _from_query forwards a span limit to list_spans."""
+class TestFromQueryLimitValidation:
+    """Tests for _from_query limit validation."""
 
     pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
-
-    @pytest.mark.asyncio
-    async def test_limit_forwarded_to_list_spans(self) -> None:
-        """_from_query passes heuristic span limit to client.list_spans."""
-        mock_client = AsyncMock()
-        mock_client.list_spans = AsyncMock(return_value=[])
-        mock_client.site = "datadoghq.com"
-
-        async for _ in _from_query(
-            mock_client, "app", None, None, None, None, None, None, 5
-        ):
-            pass
-
-        call_kwargs = mock_client.list_spans.call_args.kwargs
-        assert call_kwargs["limit"] == 250  # 5 * 50
-
-    @pytest.mark.asyncio
-    async def test_limit_capped_at_10000(self) -> None:
-        """Span limit is capped at 10,000."""
-        mock_client = AsyncMock()
-        mock_client.list_spans = AsyncMock(return_value=[])
-        mock_client.site = "datadoghq.com"
-
-        async for _ in _from_query(
-            mock_client, "app", None, None, None, None, None, None, 500
-        ):
-            pass
-
-        call_kwargs = mock_client.list_spans.call_args.kwargs
-        assert call_kwargs["limit"] == 10_000
-
-    @pytest.mark.asyncio
-    async def test_no_limit_passes_none(self) -> None:
-        """No limit passes None to list_spans."""
-        mock_client = AsyncMock()
-        mock_client.list_spans = AsyncMock(return_value=[])
-        mock_client.site = "datadoghq.com"
-
-        async for _ in _from_query(
-            mock_client, "app", None, None, None, None, None, None, None
-        ):
-            pass
-
-        call_kwargs = mock_client.list_spans.call_args.kwargs
-        assert call_kwargs["limit"] is None
 
     @pytest.mark.asyncio
     async def test_negative_limit_raises(self) -> None:
@@ -596,6 +574,76 @@ class TestFromQueryForwardsLimit:
                 mock_client, "app", None, None, None, None, None, None, 0
             ):
                 pass
+
+
+class TestFromQueryStreaming:
+    """Tests that _from_query streams traces across pages."""
+
+    pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
+
+    @pytest.mark.asyncio
+    async def test_traces_across_pages_assembled(self) -> None:
+        """Spans for the same trace arriving on different pages are grouped."""
+        page1 = [
+            create_llm_span(span_id="s1", trace_id="t1"),
+            create_llm_span(span_id="s2", trace_id="t2"),
+        ]
+        page2 = [
+            create_llm_span(span_id="s3", trace_id="t2", parent_id="s2"),
+            create_llm_span(span_id="s4", trace_id="t3"),
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.iter_span_pages = _pages(page1, page2)
+        mock_client.site = "datadoghq.com"
+
+        results: list[Transcript] = []
+        async for t in _from_query(
+            mock_client, "app", None, None, None, None, None, None, None
+        ):
+            results.append(t)
+
+        ids = {t.transcript_id for t in results}
+        assert ids == {"t1", "t2", "t3"}
+
+    @pytest.mark.asyncio
+    async def test_completed_traces_yielded_between_pages(self) -> None:
+        """Traces absent from the next page are yielded before that page."""
+        page1 = [create_llm_span(span_id="s1", trace_id="t1")]
+        page2 = [create_llm_span(span_id="s2", trace_id="t2")]
+
+        mock_client = AsyncMock()
+        mock_client.iter_span_pages = _pages(page1, page2)
+        mock_client.site = "datadoghq.com"
+
+        yield_order: list[str] = []
+        async for t in _from_query(
+            mock_client, "app", None, None, None, None, None, None, None
+        ):
+            yield_order.append(t.transcript_id)
+
+        # t1 is completed after page 2 (absent), t2 after final flush
+        assert yield_order == ["t1", "t2"]
+
+    @pytest.mark.asyncio
+    async def test_single_page_yields_all(self) -> None:
+        """A single-page response yields all traces in the final flush."""
+        spans = [
+            create_llm_span(span_id="s1", trace_id="t1"),
+            create_llm_span(span_id="s2", trace_id="t2"),
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.iter_span_pages = _pages(spans)
+        mock_client.site = "datadoghq.com"
+
+        results: list[Transcript] = []
+        async for t in _from_query(
+            mock_client, "app", None, None, None, None, None, None, None
+        ):
+            results.append(t)
+
+        assert len(results) == 2
 
 
 class TestMatchesTraceFilter:
@@ -743,7 +791,7 @@ class TestTraceFilterIntegration:
         )
 
         mock_client = AsyncMock()
-        mock_client.list_spans = AsyncMock(return_value=[short_span, long_span])
+        mock_client.iter_span_pages = _pages([short_span, long_span])
         mock_client.site = "datadoghq.com"
 
         results = []
@@ -773,7 +821,7 @@ class TestTraceFilterIntegration:
         )
 
         mock_client = AsyncMock()
-        mock_client.list_spans = AsyncMock(return_value=[gpt_span, claude_span])
+        mock_client.iter_span_pages = _pages([gpt_span, claude_span])
         mock_client.site = "datadoghq.com"
 
         results = []
@@ -833,7 +881,7 @@ class TestTraceFilterIntegration:
         )
 
         mock_client = AsyncMock()
-        mock_client.list_spans = AsyncMock(return_value=spans)
+        mock_client.iter_span_pages = _pages(spans)
         mock_client.site = "datadoghq.com"
 
         results = []

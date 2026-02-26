@@ -5,6 +5,7 @@ with httpx for HTTP calls. No SDK dependency required.
 """
 
 import os
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
@@ -68,7 +69,7 @@ class DatadogClient:
         response.raise_for_status()
         return response.json()
 
-    async def list_spans(
+    async def iter_span_pages(
         self,
         ml_app: str | None = None,
         from_time: datetime | None = None,
@@ -77,11 +78,12 @@ class DatadogClient:
         span_kind: str | None = None,
         span_name: str | None = None,
         tags: list[str] | None = None,
-        limit: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """Fetch spans from the DD LLM Observability Export API.
+    ) -> AsyncGenerator[list[dict[str, Any]], None]:
+        """Yield pages of spans from the DD LLM Observability Export API.
 
-        Handles cursor-based pagination and unwraps the response envelope.
+        Handles cursor-based pagination, yielding one page of unwrapped
+        span attribute dicts per iteration.  This avoids loading the
+        entire result set into memory.
 
         Args:
             ml_app: Filter by ml_app tag
@@ -91,10 +93,9 @@ class DatadogClient:
             span_kind: Filter by span kind (llm, tool, agent, etc.)
             span_name: Filter by span name
             tags: Additional tag filters (``key:value`` format)
-            limit: Maximum number of spans to return
 
-        Returns:
-            List of unwrapped span dictionaries
+        Yields:
+            Lists of span attribute dicts, one per API page
         """
         params: dict[str, Any] = {}
         if ml_app:
@@ -112,7 +113,6 @@ class DatadogClient:
         if tags:
             params["filter[tags]"] = ",".join(tags)
 
-        all_spans: list[dict[str, Any]] = []
         cursor: str | None = None
 
         while True:
@@ -123,13 +123,10 @@ class DatadogClient:
             result = await retry_api_call_async(partial(self._fetch_page, page_params))
 
             data = result.get("data", [])
-            for item in data:
-                attrs = item.get("attributes", {})
-                all_spans.append(attrs)
+            page = [item.get("attributes", {}) for item in data]
 
-            if limit and len(all_spans) >= limit:
-                all_spans = all_spans[:limit]
-                break
+            if page:
+                yield page
 
             next_cursor = (result.get("meta") or {}).get("page") or {}
             next_cursor = (
@@ -139,6 +136,48 @@ class DatadogClient:
                 break
             cursor = next_cursor
 
+    async def list_spans(
+        self,
+        ml_app: str | None = None,
+        from_time: datetime | None = None,
+        to_time: datetime | None = None,
+        trace_id: str | None = None,
+        span_kind: str | None = None,
+        span_name: str | None = None,
+        tags: list[str] | None = None,
+        limit: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Fetch spans from the DD LLM Observability Export API.
+
+        Accumulates all pages into a single list. For large result sets,
+        prefer ``iter_span_pages`` to avoid holding everything in memory.
+
+        Args:
+            ml_app: Filter by ml_app tag
+            from_time: Only spans created on or after this time
+            to_time: Only spans created before this time
+            trace_id: Fetch specific trace by ID
+            span_kind: Filter by span kind (llm, tool, agent, etc.)
+            span_name: Filter by span name
+            tags: Additional tag filters (``key:value`` format)
+            limit: Maximum number of spans to return
+
+        Returns:
+            List of unwrapped span dictionaries
+        """
+        all_spans: list[dict[str, Any]] = []
+        async for page in self.iter_span_pages(
+            ml_app=ml_app,
+            from_time=from_time,
+            to_time=to_time,
+            trace_id=trace_id,
+            span_kind=span_kind,
+            span_name=span_name,
+            tags=tags,
+        ):
+            all_spans.extend(page)
+            if limit and len(all_spans) >= limit:
+                return all_spans[:limit]
         return all_spans
 
     async def aclose(self) -> None:

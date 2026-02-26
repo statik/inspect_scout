@@ -69,11 +69,7 @@ async def datadog(
         span_kind: Filter by span kind (llm, tool, agent, etc.)
         span_name: Filter by span name
         tags: Additional tag filters (``key:value`` format)
-        limit: Maximum number of transcripts to yield. All matching
-            spans are fetched eagerly (with a heuristic cap based on
-            the limit), then grouped into traces. This parameter
-            limits the traces yielded, not the per-page API fetch
-            size.
+        limit: Maximum number of transcripts to yield
         min_messages: Skip traces with fewer than this many messages.
             Applied after transcript assembly.
         exclude_models: Skip traces whose model matches any entry.
@@ -118,6 +114,34 @@ async def datadog(
         await client.aclose()
 
 
+async def _try_build(
+    trace_spans: list[dict[str, Any]],
+    ml_app: str | None,
+    trace_id: str,
+    site: str,
+    strict: bool,
+) -> Transcript | None:
+    """Build a transcript, suppressing errors unless strict mode is on.
+
+    Args:
+        trace_spans: All spans for a single trace
+        ml_app: ml_app name
+        trace_id: Trace ID
+        site: Datadog site
+        strict: If True, re-raise processing errors
+
+    Returns:
+        Transcript or None if building failed
+    """
+    try:
+        return await _build_transcript(trace_spans, ml_app, trace_id, site)
+    except Exception as e:
+        if strict:
+            raise
+        logger.warning("Failed to process trace %s: %s", trace_id, e)
+        return None
+
+
 async def _from_query(
     client: DatadogClient,
     ml_app: str | None,
@@ -131,7 +155,11 @@ async def _from_query(
     min_messages: int | None = None,
     exclude_models: list[str] | None = None,
 ) -> AsyncGenerator[Transcript, None]:
-    """Fetch transcripts from Datadog query results.
+    """Fetch transcripts from Datadog, streaming page by page.
+
+    Processes API results incrementally to bound memory usage.
+    Spans are grouped by trace_id; a trace is considered complete
+    when a subsequent page arrives with no new spans for that trace.
 
     Args:
         client: DatadogClient instance
@@ -142,7 +170,7 @@ async def _from_query(
         span_kind: Span kind filter
         span_name: Span name filter
         tags: Tag filters
-        limit: Max transcripts
+        limit: Max transcripts to yield
         min_messages: Skip traces with fewer messages
         exclude_models: Skip traces matching these models
 
@@ -151,8 +179,12 @@ async def _from_query(
     """
     if limit is not None and limit < 1:
         raise ValueError(f"limit must be a positive integer, got {limit}")
-    span_limit = min(limit * 50, 10_000) if limit else None
-    all_spans = await client.list_spans(
+
+    strict = os.environ.get("DATADOG_STRICT_IMPORT", "").lower() in ("1", "true")
+    traces: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    count = 0
+
+    async for page in client.iter_span_pages(
         ml_app=ml_app,
         from_time=from_time,
         to_time=to_time,
@@ -160,19 +192,22 @@ async def _from_query(
         span_kind=span_kind,
         span_name=span_name,
         tags=tags,
-        limit=span_limit,
-    )
+    ):
+        page_trace_ids: set[str] = set()
+        for span in page:
+            tid = span.get("trace_id")
+            if tid:
+                str_tid = str(tid)
+                traces[str_tid].append(span)
+                page_trace_ids.add(str_tid)
 
-    traces: dict[str, list[dict[str, Any]]] = defaultdict(list)
-    for span in all_spans:
-        tid = span.get("trace_id")
-        if tid:
-            traces[str(tid)].append(span)
-
-    count = 0
-    for tid, trace_spans in traces.items():
-        try:
-            transcript = await _build_transcript(trace_spans, ml_app, tid, client.site)
+        # Traces present in the buffer but absent from this page
+        # have received all their spans — yield and discard them.
+        completed = [tid for tid in traces if tid not in page_trace_ids]
+        for tid in completed:
+            transcript = await _try_build(
+                traces.pop(tid), ml_app, tid, client.site, strict
+            )
             if transcript and _matches_trace_filter(
                 transcript, min_messages, exclude_models
             ):
@@ -180,11 +215,17 @@ async def _from_query(
                 count += 1
                 if limit and count >= limit:
                     return
-        except Exception as e:
-            if os.environ.get("DATADOG_STRICT_IMPORT", "").lower() in ("1", "true"):
-                raise
-            logger.warning("Failed to process trace %s: %s", tid, e)
-            continue
+
+    # Yield remaining buffered traces (from the last page)
+    for tid in list(traces):
+        transcript = await _try_build(traces.pop(tid), ml_app, tid, client.site, strict)
+        if transcript and _matches_trace_filter(
+            transcript, min_messages, exclude_models
+        ):
+            yield transcript
+            count += 1
+            if limit and count >= limit:
+                return
 
 
 def _matches_trace_filter(
