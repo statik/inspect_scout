@@ -249,7 +249,16 @@ async with transcripts_db("s3://my-transcript-db/") as db:
         tags=["env:production", "version:2"],
         limit=100,
     ))
+
+    # Skip short conversations and exclude specific models
+    await db.insert(datadog(
+        ml_app="my-llm-app",
+        min_messages=5,
+        exclude_models=["gpt-3.5-turbo"],
+    ))
 ```
+
+Client-side filters (`min_messages`, `exclude_models`) are applied after transcript assembly, so they can filter on data not available through the Datadog Export API's query parameters.
 
 ::: {.callout-note}
 ## Authentication

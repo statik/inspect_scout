@@ -48,6 +48,8 @@ async def datadog(
     span_name: str | None = None,
     tags: list[str] | None = None,
     limit: int | None = None,
+    min_messages: int | None = None,
+    exclude_models: list[str] | None = None,
     api_key: str | None = None,
     app_key: str | None = None,
     site: str | None = None,
@@ -71,6 +73,11 @@ async def datadog(
             the limit), then grouped into traces. This parameter
             limits the traces yielded, not the per-page API fetch
             size.
+        min_messages: Skip traces with fewer than this many messages.
+            Applied after transcript assembly.
+        exclude_models: Skip traces whose model matches any entry.
+            Case-insensitive substring matching (e.g. ``"gpt-3.5"``
+            matches ``"gpt-3.5-turbo"``).
         api_key: Datadog API key (or ``DD_API_KEY`` env var)
         app_key: Datadog application key (or ``DD_APP_KEY`` env var)
         site: Datadog site (or ``DD_SITE`` env var, defaults to
@@ -101,6 +108,8 @@ async def datadog(
             span_name,
             tags,
             limit,
+            min_messages,
+            exclude_models,
         ):
             yield transcript
     finally:
@@ -117,6 +126,8 @@ async def _from_query(
     span_name: str | None,
     tags: list[str] | None,
     limit: int | None,
+    min_messages: int | None = None,
+    exclude_models: list[str] | None = None,
 ) -> AsyncIterator[Transcript]:
     """Fetch transcripts from Datadog query results.
 
@@ -130,6 +141,8 @@ async def _from_query(
         span_name: Span name filter
         tags: Tag filters
         limit: Max transcripts
+        min_messages: Skip traces with fewer messages
+        exclude_models: Skip traces matching these models
 
     Yields:
         Transcript objects
@@ -158,7 +171,9 @@ async def _from_query(
     for tid, trace_spans in traces.items():
         try:
             transcript = await _build_transcript(trace_spans, ml_app, tid, client.site)
-            if transcript:
+            if transcript and _matches_trace_filter(
+                transcript, min_messages, exclude_models
+            ):
                 yield transcript
                 count += 1
                 if limit and count >= limit:
@@ -168,6 +183,37 @@ async def _from_query(
                 raise
             logger.warning("Failed to process trace %s: %s", tid, e)
             continue
+
+
+def _matches_trace_filter(
+    transcript: Transcript,
+    min_messages: int | None,
+    exclude_models: list[str] | None,
+) -> bool:
+    """Check whether a transcript passes client-side filters.
+
+    All specified filters must pass (AND semantics).
+
+    Args:
+        transcript: Built transcript to check
+        min_messages: Minimum message count required
+        exclude_models: Model substrings to exclude (case-insensitive)
+
+    Returns:
+        True if the transcript passes all filters
+    """
+    if min_messages is not None:
+        count = transcript.message_count or 0
+        if count < min_messages:
+            return False
+
+    if exclude_models and transcript.model:
+        model_lower = transcript.model.lower()
+        for pattern in exclude_models:
+            if pattern.lower() in model_lower:
+                return False
+
+    return True
 
 
 async def _build_transcript(
@@ -397,4 +443,4 @@ def _extract_model_options(span: dict[str, Any]) -> dict[str, Any] | None:
     return options if options else None
 
 
-__all__ = ["datadog", "DATADOG_SOURCE_TYPE"]
+__all__ = ["datadog", "DATADOG_SOURCE_TYPE", "_matches_trace_filter"]

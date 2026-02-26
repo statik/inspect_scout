@@ -4,6 +4,7 @@ from typing import Any
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from inspect_scout._transcript.types import Transcript
 from inspect_scout.sources._datadog import (
     _build_transcript,
     _extract_metadata,
@@ -11,6 +12,7 @@ from inspect_scout.sources._datadog import (
     _extract_root_messages,
     _from_query,
     _get_ml_app_from_tags,
+    _matches_trace_filter,
     _root_duration,
     datadog,
 )
@@ -578,6 +580,231 @@ class TestFromQueryForwardsLimit:
                 mock_client, "app", None, None, None, None, None, None, 0
             ):
                 pass
+
+
+class TestMatchesTraceFilter:
+    """Tests for _matches_trace_filter function."""
+
+    pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
+
+    @pytest.mark.asyncio
+    async def test_no_filters_yields_all(self) -> None:
+        """No filter params means no filtering."""
+        span = create_llm_span(trace_id="t1", model_name="gpt-4o")
+        transcript = await _build_transcript(
+            [span], "my-app", "t1", "datadoghq.com"
+        )
+        assert transcript is not None
+        assert _matches_trace_filter(transcript, None, None) is True
+
+    @pytest.mark.asyncio
+    async def test_min_messages_filters_short_traces(self) -> None:
+        """Skip transcripts with fewer messages than min_messages."""
+        span = create_llm_span(
+            trace_id="t1",
+            input_messages=[{"role": "user", "content": "Hi"}],
+            output_messages=[{"role": "assistant", "content": "Hello"}],
+        )
+        transcript = await _build_transcript(
+            [span], "my-app", "t1", "datadoghq.com"
+        )
+        assert transcript is not None
+        assert transcript.message_count == 2
+        assert _matches_trace_filter(transcript, min_messages=5, exclude_models=None) is False
+        assert _matches_trace_filter(transcript, min_messages=2, exclude_models=None) is True
+        assert _matches_trace_filter(transcript, min_messages=1, exclude_models=None) is True
+
+    @pytest.mark.asyncio
+    async def test_exclude_models_filters_matching(self) -> None:
+        """Skip transcripts whose model matches an excluded entry."""
+        span = create_llm_span(trace_id="t1", model_name="gpt-4o")
+        transcript = await _build_transcript(
+            [span], "my-app", "t1", "datadoghq.com"
+        )
+        assert transcript is not None
+        assert _matches_trace_filter(transcript, None, ["gpt-4o"]) is False
+        assert _matches_trace_filter(transcript, None, ["claude-3"]) is True
+
+    @pytest.mark.asyncio
+    async def test_exclude_models_case_insensitive(self) -> None:
+        """Exclude model matching is case-insensitive."""
+        span = create_llm_span(trace_id="t1", model_name="gpt-4o")
+        transcript = await _build_transcript(
+            [span], "my-app", "t1", "datadoghq.com"
+        )
+        assert transcript is not None
+        assert _matches_trace_filter(transcript, None, ["GPT-4O"]) is False
+
+    @pytest.mark.asyncio
+    async def test_exclude_models_substring_match(self) -> None:
+        """Exclude model matching uses substring."""
+        span = create_llm_span(trace_id="t1", model_name="gpt-3.5-turbo")
+        transcript = await _build_transcript(
+            [span], "my-app", "t1", "datadoghq.com"
+        )
+        assert transcript is not None
+        assert _matches_trace_filter(transcript, None, ["gpt-3.5"]) is False
+
+    @pytest.mark.asyncio
+    async def test_filters_combined(self) -> None:
+        """Both filters active use AND semantics."""
+        span = create_llm_span(
+            trace_id="t1",
+            model_name="gpt-4o",
+            input_messages=[
+                {"role": "user", "content": "Q1"},
+                {"role": "assistant", "content": "A1"},
+                {"role": "user", "content": "Q2"},
+            ],
+            output_messages=[{"role": "assistant", "content": "A2"}],
+        )
+        transcript = await _build_transcript(
+            [span], "my-app", "t1", "datadoghq.com"
+        )
+        assert transcript is not None
+        # Passes min_messages but fails exclude_models
+        assert _matches_trace_filter(transcript, min_messages=2, exclude_models=["gpt-4o"]) is False
+        # Fails min_messages but passes exclude_models
+        assert _matches_trace_filter(transcript, min_messages=100, exclude_models=["claude"]) is False
+        # Passes both
+        assert _matches_trace_filter(transcript, min_messages=2, exclude_models=["claude"]) is True
+
+    def test_exclude_models_no_model_passes(self) -> None:
+        """Transcript with no model passes exclude_models filter."""
+        transcript = Transcript(
+            transcript_id="t1",
+            model=None,
+            message_count=5,
+        )
+        assert _matches_trace_filter(transcript, None, ["gpt-4o"]) is True
+
+    def test_min_messages_none_count_treated_as_zero(self) -> None:
+        """Transcript with None message_count treated as 0."""
+        transcript = Transcript(
+            transcript_id="t1",
+            message_count=None,
+        )
+        assert _matches_trace_filter(transcript, min_messages=1, exclude_models=None) is False
+
+
+class TestTraceFilterIntegration:
+    """Integration tests for filtering through _from_query."""
+
+    pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
+
+    @pytest.mark.asyncio
+    async def test_min_messages_via_from_query(self) -> None:
+        """min_messages filters traces in _from_query."""
+        # One trace with 2 messages, one with many (multi-turn)
+        short_span = create_llm_span(
+            span_id="s1",
+            trace_id="t-short",
+            input_messages=[{"role": "user", "content": "Hi"}],
+            output_messages=[{"role": "assistant", "content": "Hello"}],
+        )
+        long_span = create_llm_span(
+            span_id="s2",
+            trace_id="t-long",
+            input_messages=[
+                {"role": "user", "content": "Q1"},
+                {"role": "assistant", "content": "A1"},
+                {"role": "user", "content": "Q2"},
+                {"role": "assistant", "content": "A2"},
+                {"role": "user", "content": "Q3"},
+            ],
+            output_messages=[{"role": "assistant", "content": "A3"}],
+        )
+
+        mock_client = AsyncMock()
+        mock_client.list_spans = AsyncMock(return_value=[short_span, long_span])
+        mock_client.site = "datadoghq.com"
+
+        results = []
+        async for t in _from_query(
+            mock_client, "app", None, None, None, None, None, None, None,
+            min_messages=5,
+        ):
+            results.append(t)
+
+        assert len(results) == 1
+        assert results[0].transcript_id == "t-long"
+
+    @pytest.mark.asyncio
+    async def test_exclude_models_via_from_query(self) -> None:
+        """exclude_models filters traces in _from_query."""
+        gpt_span = create_llm_span(
+            span_id="s1", trace_id="t-gpt", model_name="gpt-4o"
+        )
+        claude_span = create_llm_span(
+            span_id="s2", trace_id="t-claude", model_name="claude-3-sonnet"
+        )
+
+        mock_client = AsyncMock()
+        mock_client.list_spans = AsyncMock(return_value=[gpt_span, claude_span])
+        mock_client.site = "datadoghq.com"
+
+        results = []
+        async for t in _from_query(
+            mock_client, "app", None, None, None, None, None, None, None,
+            exclude_models=["gpt-4"],
+        ):
+            results.append(t)
+
+        assert len(results) == 1
+        assert results[0].transcript_id == "t-claude"
+
+    @pytest.mark.asyncio
+    async def test_min_messages_with_limit(self) -> None:
+        """Limit counts only matched transcripts, not filtered ones."""
+        spans = [
+            create_llm_span(
+                span_id=f"s{i}",
+                trace_id=f"t{i}",
+                input_messages=[{"role": "user", "content": "Hi"}],
+                output_messages=[{"role": "assistant", "content": "Hello"}],
+            )
+            for i in range(5)
+        ]
+        # Give one trace many messages
+        spans.append(
+            create_llm_span(
+                span_id="s-long-1",
+                trace_id="t-long-1",
+                input_messages=[
+                    {"role": "user", "content": "Q1"},
+                    {"role": "assistant", "content": "A1"},
+                    {"role": "user", "content": "Q2"},
+                ],
+                output_messages=[{"role": "assistant", "content": "A2"}],
+            )
+        )
+        spans.append(
+            create_llm_span(
+                span_id="s-long-2",
+                trace_id="t-long-2",
+                input_messages=[
+                    {"role": "user", "content": "Q1"},
+                    {"role": "assistant", "content": "A1"},
+                    {"role": "user", "content": "Q2"},
+                ],
+                output_messages=[{"role": "assistant", "content": "A2"}],
+            )
+        )
+
+        mock_client = AsyncMock()
+        mock_client.list_spans = AsyncMock(return_value=spans)
+        mock_client.site = "datadoghq.com"
+
+        results = []
+        async for t in _from_query(
+            mock_client, "app", None, None, None, None, None, None,
+            limit=1,
+            min_messages=3,
+        ):
+            results.append(t)
+
+        # Only 1 yielded despite 2 matching (limit=1)
+        assert len(results) == 1
 
 
 class TestBuildTranscriptEmptySpans:
