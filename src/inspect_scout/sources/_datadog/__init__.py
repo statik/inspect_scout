@@ -78,7 +78,8 @@ async def datadog(
             Applied after transcript assembly.
         exclude_models: Skip traces whose model matches any entry.
             Case-insensitive substring matching (e.g. ``"gpt-3.5"``
-            matches ``"gpt-3.5-turbo"``).
+            matches ``"gpt-3.5-turbo"``). Transcripts with no model
+            are always passed through.
         api_key: Datadog API key (or ``DD_API_KEY`` env var)
         app_key: Datadog application key (or ``DD_APP_KEY`` env var)
         site: Datadog site (or ``DD_SITE`` env var, defaults to
@@ -449,4 +450,4 @@ def _extract_model_options(span: dict[str, Any]) -> dict[str, Any] | None:
     return options if options else None
 
 
-__all__ = ["datadog", "DATADOG_SOURCE_TYPE", "_matches_trace_filter"]
+__all__ = ["datadog", "DATADOG_SOURCE_TYPE"]
