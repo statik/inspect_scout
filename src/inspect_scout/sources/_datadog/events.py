@@ -100,6 +100,8 @@ async def to_model_event(span: dict[str, Any]) -> ModelEvent:
         output=output,
         timestamp=_get_timestamp(span),
         completed=_get_end_timestamp(span),
+        # Use parent_id to nest this event under its containing agent span
+        # in the Scout UI (SpanBeginEvent defines the span via its own span_id).
         span_id=span.get("parent_id") or "",
     )
 

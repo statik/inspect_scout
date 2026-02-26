@@ -214,8 +214,8 @@ class TestNormalizeMessages:
         ["", {}],
         ids=["empty-string", "empty-dict"],
     )
-    def test_falsy_args_preserved(self, args_value: object) -> None:
-        """Falsy but non-None args should be used, not replaced by arguments."""
+    def test_falsy_args_normalized_to_empty_object(self, args_value: object) -> None:
+        """Falsy args (empty string or empty dict) normalize to '{}'."""
         messages = [
             {
                 "role": "assistant",
@@ -230,9 +230,7 @@ class TestNormalizeMessages:
         ]
         result = _normalize_messages(messages)
         tc = result[0]["tool_calls"][0]
-        # args was falsy but present — should be used instead of arguments
-        expected = "{}" if isinstance(args_value, dict) else args_value
-        assert tc["function"]["arguments"] == expected
+        assert tc["function"]["arguments"] == "{}"
 
     @pytest.mark.parametrize(
         ("args_value", "expected"),

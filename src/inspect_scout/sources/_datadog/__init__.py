@@ -252,6 +252,11 @@ async def _build_transcript(
     if llm_spans:
         model_events = [e for e in events if isinstance(e, ModelEvent)]
         if model_events:
+            # Pick the model event with the longest input as the best
+            # representation of the conversation. This works well when the
+            # application accumulates full history into each LLM call, but
+            # may select an arbitrary mid-conversation turn for apps using
+            # sliding-window, summarization, or RAG patterns.
             best_model = max(model_events, key=lambda e: len(e.input))
             messages = list(best_model.input)
             if best_model.output and not best_model.output.empty:

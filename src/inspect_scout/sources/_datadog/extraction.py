@@ -173,7 +173,7 @@ def _normalize_messages(
                                 args = raw_arguments
                             if isinstance(args, dict):
                                 args = json.dumps(args)
-                            elif args is None:
+                            elif not args:
                                 args = "{}"
                             elif not isinstance(args, str):
                                 args = json.dumps(args)
