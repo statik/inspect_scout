@@ -63,7 +63,9 @@ def build_span_tree(spans: list[dict[str, Any]]) -> list[SpanNode]:
         if span_id:
             nodes[span_id] = SpanNode(span=span)
         else:
-            logger.warning("Dropping span with empty span_id (trace_id=%s)", span.get("trace_id"))
+            logger.warning(
+                "Dropping span with empty span_id (trace_id=%s)", span.get("trace_id")
+            )
 
     roots: list[SpanNode] = []
     for node in nodes.values():

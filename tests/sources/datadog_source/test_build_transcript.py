@@ -23,6 +23,7 @@ from .mocks import (
     _SECOND_MS,
     create_agent_span,
     create_llm_span,
+    create_multiturn_trace,
     create_tool_call_trace,
 )
 
@@ -128,6 +129,18 @@ class TestBuildTranscript:
 
         assert transcript is not None
         assert transcript.source_id == "from-tags"
+
+    @pytest.mark.asyncio
+    async def test_best_model_selects_longest_input(self) -> None:
+        """best_model heuristic picks the ModelEvent with the most input messages."""
+        spans = create_multiturn_trace(trace_id="trace-multi")
+        transcript = await _build_transcript(
+            spans, "my-app", "trace-multi", "datadoghq.com"
+        )
+
+        assert transcript is not None
+        # span3 has 6 input messages (longest); output adds 1 more
+        assert transcript.message_count == 7
 
     @pytest.mark.asyncio
     async def test_error_span_captured(self) -> None:
@@ -591,9 +604,7 @@ class TestMatchesTraceFilter:
     async def test_no_filters_yields_all(self) -> None:
         """No filter params means no filtering."""
         span = create_llm_span(trace_id="t1", model_name="gpt-4o")
-        transcript = await _build_transcript(
-            [span], "my-app", "t1", "datadoghq.com"
-        )
+        transcript = await _build_transcript([span], "my-app", "t1", "datadoghq.com")
         assert transcript is not None
         assert _matches_trace_filter(transcript, None, None) is True
 
@@ -605,22 +616,27 @@ class TestMatchesTraceFilter:
             input_messages=[{"role": "user", "content": "Hi"}],
             output_messages=[{"role": "assistant", "content": "Hello"}],
         )
-        transcript = await _build_transcript(
-            [span], "my-app", "t1", "datadoghq.com"
-        )
+        transcript = await _build_transcript([span], "my-app", "t1", "datadoghq.com")
         assert transcript is not None
         assert transcript.message_count == 2
-        assert _matches_trace_filter(transcript, min_messages=5, exclude_models=None) is False
-        assert _matches_trace_filter(transcript, min_messages=2, exclude_models=None) is True
-        assert _matches_trace_filter(transcript, min_messages=1, exclude_models=None) is True
+        assert (
+            _matches_trace_filter(transcript, min_messages=5, exclude_models=None)
+            is False
+        )
+        assert (
+            _matches_trace_filter(transcript, min_messages=2, exclude_models=None)
+            is True
+        )
+        assert (
+            _matches_trace_filter(transcript, min_messages=1, exclude_models=None)
+            is True
+        )
 
     @pytest.mark.asyncio
     async def test_exclude_models_filters_matching(self) -> None:
         """Skip transcripts whose model matches an excluded entry."""
         span = create_llm_span(trace_id="t1", model_name="gpt-4o")
-        transcript = await _build_transcript(
-            [span], "my-app", "t1", "datadoghq.com"
-        )
+        transcript = await _build_transcript([span], "my-app", "t1", "datadoghq.com")
         assert transcript is not None
         assert _matches_trace_filter(transcript, None, ["gpt-4o"]) is False
         assert _matches_trace_filter(transcript, None, ["claude-3"]) is True
@@ -629,9 +645,7 @@ class TestMatchesTraceFilter:
     async def test_exclude_models_case_insensitive(self) -> None:
         """Exclude model matching is case-insensitive."""
         span = create_llm_span(trace_id="t1", model_name="gpt-4o")
-        transcript = await _build_transcript(
-            [span], "my-app", "t1", "datadoghq.com"
-        )
+        transcript = await _build_transcript([span], "my-app", "t1", "datadoghq.com")
         assert transcript is not None
         assert _matches_trace_filter(transcript, None, ["GPT-4O"]) is False
 
@@ -639,9 +653,7 @@ class TestMatchesTraceFilter:
     async def test_exclude_models_substring_match(self) -> None:
         """Exclude model matching uses substring."""
         span = create_llm_span(trace_id="t1", model_name="gpt-3.5-turbo")
-        transcript = await _build_transcript(
-            [span], "my-app", "t1", "datadoghq.com"
-        )
+        transcript = await _build_transcript([span], "my-app", "t1", "datadoghq.com")
         assert transcript is not None
         assert _matches_trace_filter(transcript, None, ["gpt-3.5"]) is False
 
@@ -658,16 +670,25 @@ class TestMatchesTraceFilter:
             ],
             output_messages=[{"role": "assistant", "content": "A2"}],
         )
-        transcript = await _build_transcript(
-            [span], "my-app", "t1", "datadoghq.com"
-        )
+        transcript = await _build_transcript([span], "my-app", "t1", "datadoghq.com")
         assert transcript is not None
         # Passes min_messages but fails exclude_models
-        assert _matches_trace_filter(transcript, min_messages=2, exclude_models=["gpt-4o"]) is False
+        assert (
+            _matches_trace_filter(transcript, min_messages=2, exclude_models=["gpt-4o"])
+            is False
+        )
         # Fails min_messages but passes exclude_models
-        assert _matches_trace_filter(transcript, min_messages=100, exclude_models=["claude"]) is False
+        assert (
+            _matches_trace_filter(
+                transcript, min_messages=100, exclude_models=["claude"]
+            )
+            is False
+        )
         # Passes both
-        assert _matches_trace_filter(transcript, min_messages=2, exclude_models=["claude"]) is True
+        assert (
+            _matches_trace_filter(transcript, min_messages=2, exclude_models=["claude"])
+            is True
+        )
 
     def test_exclude_models_no_model_passes(self) -> None:
         """Transcript with no model passes exclude_models filter."""
@@ -684,7 +705,10 @@ class TestMatchesTraceFilter:
             transcript_id="t1",
             message_count=None,
         )
-        assert _matches_trace_filter(transcript, min_messages=1, exclude_models=None) is False
+        assert (
+            _matches_trace_filter(transcript, min_messages=1, exclude_models=None)
+            is False
+        )
 
 
 class TestTraceFilterIntegration:
@@ -721,7 +745,15 @@ class TestTraceFilterIntegration:
 
         results = []
         async for t in _from_query(
-            mock_client, "app", None, None, None, None, None, None, None,
+            mock_client,
+            "app",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
             min_messages=5,
         ):
             results.append(t)
@@ -732,9 +764,7 @@ class TestTraceFilterIntegration:
     @pytest.mark.asyncio
     async def test_exclude_models_via_from_query(self) -> None:
         """exclude_models filters traces in _from_query."""
-        gpt_span = create_llm_span(
-            span_id="s1", trace_id="t-gpt", model_name="gpt-4o"
-        )
+        gpt_span = create_llm_span(span_id="s1", trace_id="t-gpt", model_name="gpt-4o")
         claude_span = create_llm_span(
             span_id="s2", trace_id="t-claude", model_name="claude-3-sonnet"
         )
@@ -745,7 +775,15 @@ class TestTraceFilterIntegration:
 
         results = []
         async for t in _from_query(
-            mock_client, "app", None, None, None, None, None, None, None,
+            mock_client,
+            "app",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
             exclude_models=["gpt-4"],
         ):
             results.append(t)
@@ -797,7 +835,14 @@ class TestTraceFilterIntegration:
 
         results = []
         async for t in _from_query(
-            mock_client, "app", None, None, None, None, None, None,
+            mock_client,
+            "app",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
             limit=1,
             min_messages=3,
         ):
@@ -818,7 +863,5 @@ class TestBuildTranscriptEmptySpans:
             "trace_id": "trace-1",
             "span_kind": "llm",
         }
-        result = await _build_transcript(
-            [span], "my-app", "trace-1", "datadoghq.com"
-        )
+        result = await _build_transcript([span], "my-app", "trace-1", "datadoghq.com")
         assert result is None

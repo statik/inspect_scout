@@ -327,8 +327,25 @@ def create_tool_call_trace(
         model_name=model,
         input_messages=[
             {"role": "user", "content": "What's the weather in SF?"},
-            {"role": "assistant", "content": ""},
-            {"role": "tool", "content": "Sunny, 72F"},
+            {
+                "role": "assistant",
+                "content": "",
+                "tool_calls": [
+                    {
+                        "id": "call_abc123",
+                        "type": "function",
+                        "function": {
+                            "name": "get_weather",
+                            "arguments": '{"city": "San Francisco"}',
+                        },
+                    }
+                ],
+            },
+            {
+                "role": "tool",
+                "content": "Sunny, 72F",
+                "tool_call_id": "call_abc123",
+            },
         ],
         output_messages=[
             {

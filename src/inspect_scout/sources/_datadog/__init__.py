@@ -12,9 +12,10 @@ Authentication:
 
 import os
 from collections import defaultdict
+from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 from logging import getLogger
-from typing import Any, AsyncIterator
+from typing import Any
 
 from inspect_ai.event import ModelEvent
 from inspect_ai.model import (
@@ -53,7 +54,7 @@ async def datadog(
     api_key: str | None = None,
     app_key: str | None = None,
     site: str | None = None,
-) -> AsyncIterator[Transcript]:
+) -> AsyncGenerator[Transcript, None]:
     """Read transcripts from Datadog LLM Observability traces.
 
     Each Datadog trace (collection of spans with same trace_id) becomes one
@@ -128,7 +129,7 @@ async def _from_query(
     limit: int | None,
     min_messages: int | None = None,
     exclude_models: list[str] | None = None,
-) -> AsyncIterator[Transcript]:
+) -> AsyncGenerator[Transcript, None]:
     """Fetch transcripts from Datadog query results.
 
     Args:

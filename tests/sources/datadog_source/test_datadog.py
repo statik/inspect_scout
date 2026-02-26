@@ -47,5 +47,6 @@ class TestDatadogIntegration:
         from inspect_scout.sources._datadog import datadog
 
         async for transcript in datadog(limit=1):
-            assert len(transcript.events) > 0 or len(transcript.messages) > 0
+            assert len(transcript.events) > 0
+            assert len(transcript.messages) > 0
             break

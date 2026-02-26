@@ -214,8 +214,8 @@ class TestNormalizeMessages:
         ["", {}],
         ids=["empty-string", "empty-dict"],
     )
-    def test_falsy_args_normalized_to_empty_object(self, args_value: object) -> None:
-        """Falsy args (empty string or empty dict) normalize to '{}'."""
+    def test_falsy_args_falls_back_to_arguments(self, args_value: object) -> None:
+        """Falsy args (empty string or empty dict) fall back to arguments."""
         messages = [
             {
                 "role": "assistant",
@@ -230,7 +230,36 @@ class TestNormalizeMessages:
         ]
         result = _normalize_messages(messages)
         tc = result[0]["tool_calls"][0]
+        assert tc["function"]["arguments"] == '{"x": 1}'
+
+    def test_falsy_args_without_arguments_defaults_to_empty(self) -> None:
+        """Falsy args without arguments key defaults to '{}'."""
+        messages = [
+            {
+                "role": "assistant",
+                "tool_calls": [{"name": "fn", "args": ""}],
+            }
+        ]
+        result = _normalize_messages(messages)
+        tc = result[0]["tool_calls"][0]
         assert tc["function"]["arguments"] == "{}"
+
+    def test_absent_args_falls_back_to_arguments(self) -> None:
+        """Missing args key falls back to arguments."""
+        messages = [
+            {
+                "role": "assistant",
+                "tool_calls": [
+                    {
+                        "name": "fn",
+                        "arguments": '{"x": 1}',
+                    }
+                ],
+            }
+        ]
+        result = _normalize_messages(messages)
+        tc = result[0]["tool_calls"][0]
+        assert tc["function"]["arguments"] == '{"x": 1}'
 
     @pytest.mark.parametrize(
         ("args_value", "expected"),

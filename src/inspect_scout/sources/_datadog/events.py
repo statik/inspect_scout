@@ -158,6 +158,8 @@ def to_tool_event(span: dict[str, Any]) -> ToolEvent:
         timestamp=_get_timestamp(span),
         completed=_get_end_timestamp(span),
         error=error,
+        # Use parent_id to nest under the containing agent span
+        # (matches to_model_event; SpanBeginEvent owns the span_id).
         span_id=span.get("parent_id") or "",
     )
 

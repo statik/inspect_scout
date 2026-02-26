@@ -118,7 +118,6 @@ class TestBuildSpanTree:
         assert node.start_time.year == 2023
         assert node.start_time.month == 11
 
-
     def test_empty_span_id_logged(self, caplog: pytest.LogCaptureFixture) -> None:
         """Span with empty span_id is dropped with a warning."""
         span = {"span_id": "", "trace_id": "trace-1"}

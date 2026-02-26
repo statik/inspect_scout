@@ -169,7 +169,7 @@ def _normalize_messages(
                         if "function" not in new_tc and "name" in new_tc:
                             args = new_tc.pop("args", None)
                             raw_arguments = new_tc.pop("arguments", None)
-                            if args is None:
+                            if not args:
                                 args = raw_arguments
                             if isinstance(args, dict):
                                 args = json.dumps(args)
@@ -208,8 +208,10 @@ def _simple_message_conversion(
             result.append(ChatMessageSystem(content=content))
         elif role == "user":
             result.append(ChatMessageUser(content=content))
-        elif role == "assistant":
+        elif role in ("assistant", "model"):
             result.append(ChatMessageAssistant(content=content))
+        else:
+            logger.debug("Skipping message with unhandled role: %s", role)
     return result
 
 
