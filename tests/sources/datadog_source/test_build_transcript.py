@@ -141,6 +141,9 @@ class TestBuildTranscript:
         assert transcript is not None
         # span3 has 6 input messages (longest); output adds 1 more
         assert transcript.message_count == 7
+        # Verify span3 was actually selected by checking unique content
+        assert transcript.messages[-2].content == "And 5 + 5?"
+        assert transcript.messages[-1].content == "5 + 5 equals 10."
 
     @pytest.mark.asyncio
     async def test_error_span_captured(self) -> None:
