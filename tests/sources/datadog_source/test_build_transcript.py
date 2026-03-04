@@ -13,8 +13,10 @@ from inspect_scout.sources._datadog import (
     _extract_root_messages,
     _from_query,
     _get_ml_app_from_tags,
+    _get_tag_value,
     _matches_trace_filter,
     _root_duration,
+    _should_deduplicate,
     datadog,
 )
 from inspect_scout.sources._datadog.client import DATADOG_SOURCE_TYPE
@@ -916,3 +918,274 @@ class TestBuildTranscriptEmptySpans:
         }
         result = await _build_transcript([span], "my-app", "trace-1", "datadoghq.com")
         assert result is None
+
+
+class TestDeduplicateBy:
+    """Tests for session-based deduplication via deduplicate_by parameter."""
+
+    pytestmark = pytest.mark.usefixtures("no_fallback_warnings")
+
+    @pytest.mark.asyncio
+    async def test_dedup_keeps_highest_tokens(self) -> None:
+        """Two traces with the same session_id → only higher-token one yielded."""
+        span_low = create_llm_span(
+            span_id="s1",
+            trace_id="t1",
+            input_tokens=10,
+            output_tokens=5,
+            tags=["session_id:abc123"],
+        )
+        span_high = create_llm_span(
+            span_id="s2",
+            trace_id="t2",
+            input_tokens=100,
+            output_tokens=50,
+            tags=["session_id:abc123"],
+        )
+
+        mock_client = AsyncMock()
+        mock_client.iter_span_pages = _pages([span_low, span_high])
+        mock_client.site = "datadoghq.com"
+
+        results: list[Transcript] = []
+        async for t in _from_query(
+            mock_client,
+            "app",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            deduplicate_by="session_id",
+        ):
+            results.append(t)
+
+        assert len(results) == 1
+        assert results[0].transcript_id == "t2"
+        assert results[0].total_tokens == 150
+
+    @pytest.mark.asyncio
+    async def test_dedup_one_per_session(self) -> None:
+        """3 traces in 2 sessions → 2 transcripts."""
+        span1 = create_llm_span(
+            span_id="s1",
+            trace_id="t1",
+            input_tokens=10,
+            output_tokens=5,
+            tags=["session_id:sess-a"],
+        )
+        span2 = create_llm_span(
+            span_id="s2",
+            trace_id="t2",
+            input_tokens=20,
+            output_tokens=10,
+            tags=["session_id:sess-a"],
+        )
+        span3 = create_llm_span(
+            span_id="s3",
+            trace_id="t3",
+            input_tokens=5,
+            output_tokens=3,
+            tags=["session_id:sess-b"],
+        )
+
+        mock_client = AsyncMock()
+        mock_client.iter_span_pages = _pages([span1, span2, span3])
+        mock_client.site = "datadoghq.com"
+
+        results: list[Transcript] = []
+        async for t in _from_query(
+            mock_client,
+            "app",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            deduplicate_by="session_id",
+        ):
+            results.append(t)
+
+        assert len(results) == 2
+        ids = {t.transcript_id for t in results}
+        assert ids == {"t2", "t3"}
+
+    @pytest.mark.asyncio
+    async def test_dedup_passthrough_without_tag(self) -> None:
+        """Traces missing the dedup tag are yielded immediately."""
+        span_tagged = create_llm_span(
+            span_id="s1",
+            trace_id="t1",
+            input_tokens=10,
+            output_tokens=5,
+            tags=["session_id:abc"],
+        )
+        span_untagged = create_llm_span(
+            span_id="s2",
+            trace_id="t2",
+            input_tokens=10,
+            output_tokens=5,
+            tags=["env:prod"],
+        )
+
+        mock_client = AsyncMock()
+        # Two pages so t1 completes on page boundary, t2 on flush
+        mock_client.iter_span_pages = _pages([span_tagged], [span_untagged])
+        mock_client.site = "datadoghq.com"
+
+        results: list[Transcript] = []
+        async for t in _from_query(
+            mock_client,
+            "app",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            deduplicate_by="session_id",
+        ):
+            results.append(t)
+
+        assert len(results) == 2
+        ids = {t.transcript_id for t in results}
+        assert ids == {"t1", "t2"}
+
+    @pytest.mark.asyncio
+    async def test_dedup_disabled_when_none(self) -> None:
+        """deduplicate_by=None → all traces yielded (existing behavior)."""
+        span1 = create_llm_span(
+            span_id="s1",
+            trace_id="t1",
+            tags=["session_id:abc"],
+        )
+        span2 = create_llm_span(
+            span_id="s2",
+            trace_id="t2",
+            tags=["session_id:abc"],
+        )
+
+        mock_client = AsyncMock()
+        mock_client.iter_span_pages = _pages([span1, span2])
+        mock_client.site = "datadoghq.com"
+
+        results: list[Transcript] = []
+        async for t in _from_query(
+            mock_client,
+            "app",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            deduplicate_by=None,
+        ):
+            results.append(t)
+
+        assert len(results) == 2
+
+    @pytest.mark.asyncio
+    async def test_dedup_with_limit(self) -> None:
+        """Limit applies to total output including dedup winners."""
+        spans = [
+            create_llm_span(
+                span_id=f"s{i}",
+                trace_id=f"t{i}",
+                input_tokens=10 * (i + 1),
+                output_tokens=5,
+                tags=[f"session_id:sess-{i}"],
+            )
+            for i in range(5)
+        ]
+
+        mock_client = AsyncMock()
+        mock_client.iter_span_pages = _pages(spans)
+        mock_client.site = "datadoghq.com"
+
+        results: list[Transcript] = []
+        async for t in _from_query(
+            mock_client,
+            "app",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            limit=2,
+            deduplicate_by="session_id",
+        ):
+            results.append(t)
+
+        assert len(results) == 2
+
+    @pytest.mark.asyncio
+    async def test_dedup_none_tokens_treated_as_zero(self) -> None:
+        """total_tokens=None loses to any positive value."""
+        # Span with zero token counts (transcript will have total_tokens=0)
+        span_none = create_llm_span(
+            span_id="s1",
+            trace_id="t1",
+            input_tokens=0,
+            output_tokens=0,
+            tags=["session_id:abc"],
+        )
+        span_some = create_llm_span(
+            span_id="s2",
+            trace_id="t2",
+            input_tokens=1,
+            output_tokens=1,
+            tags=["session_id:abc"],
+        )
+
+        mock_client = AsyncMock()
+        mock_client.iter_span_pages = _pages([span_none, span_some])
+        mock_client.site = "datadoghq.com"
+
+        results: list[Transcript] = []
+        async for t in _from_query(
+            mock_client,
+            "app",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            deduplicate_by="session_id",
+        ):
+            results.append(t)
+
+        assert len(results) == 1
+        assert results[0].transcript_id == "t2"
+
+    def test_get_tag_value(self) -> None:
+        """Unit test of the tag extraction helper."""
+        transcript = Transcript(
+            transcript_id="t1",
+            metadata={"tags": ["session_id:abc123", "env:prod", "ml_app:my-app"]},
+        )
+        assert _get_tag_value(transcript, "session_id") == "abc123"
+        assert _get_tag_value(transcript, "env") == "prod"
+        assert _get_tag_value(transcript, "missing") is None
+
+        # No tags in metadata
+        transcript_no_tags = Transcript(
+            transcript_id="t2",
+            metadata={},
+        )
+        assert _get_tag_value(transcript_no_tags, "session_id") is None
+
+        # Missing metadata (defaults to empty dict)
+        transcript_default = Transcript(
+            transcript_id="t3",
+        )
+        assert _get_tag_value(transcript_default, "session_id") is None

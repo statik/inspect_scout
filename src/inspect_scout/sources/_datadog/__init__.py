@@ -51,6 +51,7 @@ async def datadog(
     limit: int | None = None,
     min_messages: int | None = None,
     exclude_models: list[str] | None = None,
+    deduplicate_by: str | None = None,
     api_key: str | None = None,
     app_key: str | None = None,
     site: str | None = None,
@@ -76,6 +77,10 @@ async def datadog(
             Case-insensitive substring matching (e.g. ``"gpt-3.5"``
             matches ``"gpt-3.5-turbo"``). Transcripts with no model
             are always passed through.
+        deduplicate_by: Tag key to deduplicate on. When set, only
+            the transcript with the highest ``total_tokens`` per unique
+            tag value is yielded. Transcripts missing the tag pass
+            through immediately.
         api_key: Datadog API key (or ``DD_API_KEY`` env var)
         app_key: Datadog application key (or ``DD_APP_KEY`` env var)
         site: Datadog site (or ``DD_SITE`` env var, defaults to
@@ -108,6 +113,7 @@ async def datadog(
             limit,
             min_messages,
             exclude_models,
+            deduplicate_by,
         ):
             yield transcript
     finally:
@@ -154,6 +160,7 @@ async def _from_query(
     limit: int | None,
     min_messages: int | None = None,
     exclude_models: list[str] | None = None,
+    deduplicate_by: str | None = None,
 ) -> AsyncGenerator[Transcript, None]:
     """Fetch transcripts from Datadog, streaming page by page.
 
@@ -173,6 +180,9 @@ async def _from_query(
         limit: Max transcripts to yield
         min_messages: Skip traces with fewer messages
         exclude_models: Skip traces matching these models
+        deduplicate_by: Tag key to deduplicate on. When set, only the
+            transcript with the highest ``total_tokens`` per unique tag
+            value is yielded. Transcripts missing the tag pass through.
 
     Yields:
         Transcript objects
@@ -183,6 +193,7 @@ async def _from_query(
     strict = os.environ.get("DATADOG_STRICT_IMPORT", "").lower() in ("1", "true")
     traces: dict[str, list[dict[str, Any]]] = defaultdict(list)
     count = 0
+    dedup_buffer: dict[str, Transcript] = {}
 
     async for page in client.iter_span_pages(
         ml_app=ml_app,
@@ -211,10 +222,12 @@ async def _from_query(
             if transcript and _matches_trace_filter(
                 transcript, min_messages, exclude_models
             ):
-                yield transcript
-                count += 1
-                if limit and count >= limit:
-                    return
+                result = _should_deduplicate(transcript, deduplicate_by, dedup_buffer)
+                if result is not None:
+                    yield result
+                    count += 1
+                    if limit and count >= limit:
+                        return
 
     # Yield remaining buffered traces (from the last page)
     for tid in list(traces):
@@ -222,10 +235,19 @@ async def _from_query(
         if transcript and _matches_trace_filter(
             transcript, min_messages, exclude_models
         ):
-            yield transcript
-            count += 1
-            if limit and count >= limit:
-                return
+            result = _should_deduplicate(transcript, deduplicate_by, dedup_buffer)
+            if result is not None:
+                yield result
+                count += 1
+                if limit and count >= limit:
+                    return
+
+    # Yield dedup winners
+    for transcript in dedup_buffer.values():
+        yield transcript
+        count += 1
+        if limit and count >= limit:
+            return
 
 
 def _matches_trace_filter(
@@ -384,6 +406,66 @@ def _root_duration(root_span: dict[str, Any]) -> float | None:
             return int(duration) / 1e3
         except (ValueError, TypeError):
             pass
+    return None
+
+
+def _get_tag_value(transcript: Transcript, tag_key: str) -> str | None:
+    """Extract a tag value from transcript metadata tags.
+
+    Looks for ``"key:value"`` entries in ``transcript.metadata["tags"]``.
+
+    Args:
+        transcript: Transcript with metadata potentially containing tags
+        tag_key: Tag key to search for (e.g. ``"session_id"``)
+
+    Returns:
+        The tag value, or None if not found
+    """
+    metadata = transcript.metadata or {}
+    tags = metadata.get("tags")
+    if isinstance(tags, list):
+        prefix = f"{tag_key}:"
+        for tag in tags:
+            if isinstance(tag, str) and tag.startswith(prefix):
+                return tag[len(prefix) :]
+    return None
+
+
+def _should_deduplicate(
+    transcript: Transcript,
+    deduplicate_by: str | None,
+    dedup_buffer: dict[str, Transcript],
+) -> Transcript | None:
+    """Buffer transcript for deduplication, returning it only if it should be yielded now.
+
+    When ``deduplicate_by`` is set, transcripts sharing the same tag value
+    compete — only the one with the highest ``total_tokens`` wins. Transcripts
+    without the tag are passed through immediately.
+
+    Args:
+        transcript: The transcript to consider
+        deduplicate_by: Tag key to deduplicate on, or None to disable
+        dedup_buffer: Mutable buffer mapping tag values to best-so-far transcripts
+
+    Returns:
+        The transcript if it should be yielded immediately, or None if buffered
+    """
+    if deduplicate_by is None:
+        return transcript
+
+    tag_value = _get_tag_value(transcript, deduplicate_by)
+    if tag_value is None:
+        return transcript
+
+    existing = dedup_buffer.get(tag_value)
+    if existing is None:
+        dedup_buffer[tag_value] = transcript
+    else:
+        new_tokens = transcript.total_tokens or 0
+        existing_tokens = existing.total_tokens or 0
+        if new_tokens > existing_tokens:
+            dedup_buffer[tag_value] = transcript
+
     return None
 
 
