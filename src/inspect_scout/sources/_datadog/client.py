@@ -5,12 +5,12 @@ with httpx for HTTP calls. No SDK dependency required.
 """
 
 import os
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Awaitable
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from functools import partial
 from logging import getLogger
-from typing import TYPE_CHECKING, Any, Callable, TypeVar
+from typing import TYPE_CHECKING, Any, Callable
 
 from tenacity import (
     retry,
@@ -22,8 +22,6 @@ if TYPE_CHECKING:
     import httpx
 
 logger = getLogger(__name__)
-
-T = TypeVar("T")
 
 DATADOG_SOURCE_TYPE = "datadog"
 
@@ -301,7 +299,7 @@ def _get_retry_after(exception: BaseException) -> float | None:
     return None
 
 
-async def retry_api_call_async(func: Callable[[], Any]) -> Any:
+async def retry_api_call_async(func: Callable[[], Awaitable[Any]]) -> Any:
     """Execute a Datadog API call with retry logic for transient errors.
 
     Uses adaptive retry strategy:

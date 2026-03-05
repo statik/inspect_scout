@@ -8,7 +8,7 @@ Converts Datadog spans to Scout event types:
 
 import json
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime
 from logging import getLogger
 from typing import Any
 
@@ -30,29 +30,9 @@ from .detection import (
     is_tool_span,
 )
 from .extraction import extract_input_messages, extract_output, extract_tools
-from .tree import DATETIME_MIN_UTC
+from .tree import DATETIME_MIN_UTC, _ms_to_datetime
 
 logger = getLogger(__name__)
-
-
-def _ms_to_datetime(ms: Any) -> datetime:
-    """Convert millisecond timestamp to datetime.
-
-    The Datadog Export API field is named ``start_ns`` but actually
-    contains milliseconds (13-digit values, not 19-digit nanoseconds).
-
-    Args:
-        ms: Millisecond timestamp (int or None)
-
-    Returns:
-        UTC datetime, or datetime.min (UTC) if conversion fails
-    """
-    if ms is not None:
-        try:
-            return datetime.fromtimestamp(int(ms) / 1e3, tz=timezone.utc)
-        except (ValueError, TypeError, OverflowError):
-            pass
-    return DATETIME_MIN_UTC
 
 
 def _get_timestamp(span: dict[str, Any]) -> datetime:
@@ -66,9 +46,8 @@ def _get_end_timestamp(span: dict[str, Any]) -> datetime:
     duration = span.get("duration")
     if start_ms is not None and duration is not None:
         try:
-            end_ms = int(start_ms) + int(duration)
-            return datetime.fromtimestamp(end_ms / 1e3, tz=timezone.utc)
-        except (ValueError, TypeError, OverflowError):
+            return _ms_to_datetime(int(start_ms) + int(duration))
+        except (ValueError, TypeError):
             pass
     return DATETIME_MIN_UTC
 

@@ -13,7 +13,7 @@ Authentication:
 import os
 from collections import defaultdict
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
+from datetime import datetime
 from logging import getLogger
 from typing import Any
 
@@ -35,7 +35,13 @@ from .client import (
 from .detection import Provider, detect_provider, get_model_name
 from .events import spans_to_events
 from .extraction import sum_tokens
-from .tree import build_span_tree, flatten_tree_chronological, get_llm_spans
+from .tree import (
+    DATETIME_MIN_UTC,
+    _ms_to_datetime,
+    build_span_tree,
+    flatten_tree_chronological,
+    get_llm_spans,
+)
 
 logger = getLogger(__name__)
 
@@ -111,16 +117,16 @@ async def datadog(
         async for transcript in _from_query(
             client,
             ml_app,
-            from_time,
-            to_time,
-            trace_id,
-            span_kind,
-            span_name,
-            tags,
-            limit,
-            min_messages,
-            exclude_models,
-            deduplicate_by,
+            from_time=from_time,
+            to_time=to_time,
+            trace_id=trace_id,
+            span_kind=span_kind,
+            span_name=span_name,
+            tags=tags,
+            limit=limit,
+            min_messages=min_messages,
+            exclude_models=exclude_models,
+            deduplicate_by=deduplicate_by,
         ):
             yield transcript
     finally:
@@ -158,13 +164,14 @@ async def _try_build(
 async def _from_query(
     client: DatadogClient,
     ml_app: str | None,
-    from_time: datetime | None,
-    to_time: datetime | None,
-    trace_id: str | None,
-    span_kind: str | None,
-    span_name: str | None,
-    tags: list[str] | None,
-    limit: int | None,
+    *,
+    from_time: datetime | None = None,
+    to_time: datetime | None = None,
+    trace_id: str | None = None,
+    span_kind: str | None = None,
+    span_name: str | None = None,
+    tags: list[str] | None = None,
+    limit: int | None = None,
     min_messages: int | None = None,
     exclude_models: list[str] | None = None,
     deduplicate_by: str | None = None,
@@ -367,12 +374,9 @@ async def _build_transcript(
     date = None
     start_ns = root_span.get("start_ns")
     if start_ns is not None:
-        try:
-            # start_ns is milliseconds despite the field name
-            dt = datetime.fromtimestamp(int(start_ns) / 1e3, tz=timezone.utc)
+        dt = _ms_to_datetime(start_ns)
+        if dt != DATETIME_MIN_UTC:
             date = dt.isoformat()
-        except (ValueError, TypeError, OverflowError):
-            pass
 
     error = None
     for span in ordered_spans:

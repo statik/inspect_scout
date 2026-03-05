@@ -67,6 +67,7 @@ class TestDetectProvider:
         span: dict[str, Any] = {"model_provider": "OpenAI"}
         assert detect_provider(span) == Provider.OPENAI
 
+
 class TestGetModelName:
     """Tests for get_model_name function."""
 

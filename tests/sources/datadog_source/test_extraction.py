@@ -315,8 +315,7 @@ class TestNormalizeMessages:
 class TestSimpleMessageConversion:
     """Tests for _simple_message_conversion fallback."""
 
-    @pytest.mark.usefixtures("no_fallback_warnings")
-    def test_converts_all_roles(self) -> None:
+    def test_converts_all_roles(self, fallback_warnings: list[str]) -> None:
         """Convert system, user, and assistant messages."""
         messages = [
             {"role": "system", "content": "Be helpful"},
@@ -340,11 +339,11 @@ class TestSimpleMessageConversion:
 
         assert len(result) == 1
         assert result[0].role == "user"
-        assert len(fallback_warnings) == 1
-        assert "narrator" in fallback_warnings[0]
+        assert len(fallback_warnings) == 2
+        assert "fallback" in fallback_warnings[0].lower()
+        assert "narrator" in fallback_warnings[1]
 
-    @pytest.mark.usefixtures("no_fallback_warnings")
-    def test_tool_role_converted(self) -> None:
+    def test_tool_role_converted(self, fallback_warnings: list[str]) -> None:
         """Tool role messages are converted to ChatMessageTool."""
         messages = [
             {
@@ -362,13 +361,13 @@ class TestSimpleMessageConversion:
         assert result[0].tool_call_id == "call_123"
         assert result[0].function == "search"
 
-    @pytest.mark.usefixtures("no_fallback_warnings")
-    def test_empty_messages(self) -> None:
+    def test_empty_messages(self, fallback_warnings: list[str]) -> None:
         """Empty input produces empty output."""
         assert _simple_message_conversion([]) == []
 
-    @pytest.mark.usefixtures("no_fallback_warnings")
-    def test_missing_content_defaults_to_empty(self) -> None:
+    def test_missing_content_defaults_to_empty(
+        self, fallback_warnings: list[str]
+    ) -> None:
         """Missing content field defaults to empty string."""
         messages = [{"role": "user"}]
         result = _simple_message_conversion(messages)

@@ -16,7 +16,6 @@ from inspect_scout.sources._datadog import (
     _get_tag_value,
     _matches_trace_filter,
     _root_duration,
-    _should_deduplicate,
     datadog,
 )
 from inspect_scout.sources._datadog.client import DATADOG_SOURCE_TYPE
@@ -338,17 +337,7 @@ class TestStrictImport:
             side_effect=RuntimeError("bad span data"),
         ):
             with pytest.raises(RuntimeError, match="bad span data"):
-                async for _ in _from_query(
-                    mock_client,
-                    "test-app",
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                ):
+                async for _ in _from_query(mock_client, "test-app"):
                     pass
 
     @pytest.mark.asyncio
@@ -384,17 +373,7 @@ class TestStrictImport:
             side_effect=RuntimeError("bad span data"),
         ):
             results: list[object] = []
-            async for t in _from_query(
-                mock_client,
-                "test-app",
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-                None,
-            ):
+            async for t in _from_query(mock_client, "test-app"):
                 results.append(t)
 
         assert results == []
@@ -563,7 +542,9 @@ class TestFromQueryLimitValidation:
         mock_client = AsyncMock()
         with pytest.raises(ValueError, match="limit must be a positive integer"):
             async for _ in _from_query(
-                mock_client, "app", None, None, None, None, None, None, -1
+                mock_client,
+                "app",
+                limit=-1,
             ):
                 pass
 
@@ -573,7 +554,9 @@ class TestFromQueryLimitValidation:
         mock_client = AsyncMock()
         with pytest.raises(ValueError, match="limit must be a positive integer"):
             async for _ in _from_query(
-                mock_client, "app", None, None, None, None, None, None, 0
+                mock_client,
+                "app",
+                limit=0,
             ):
                 pass
 
@@ -600,9 +583,7 @@ class TestFromQueryStreaming:
         mock_client.site = "datadoghq.com"
 
         results: list[Transcript] = []
-        async for t in _from_query(
-            mock_client, "app", None, None, None, None, None, None, None
-        ):
+        async for t in _from_query(mock_client, "app"):
             results.append(t)
 
         ids = {t.transcript_id for t in results}
@@ -619,9 +600,7 @@ class TestFromQueryStreaming:
         mock_client.site = "datadoghq.com"
 
         yield_order: list[str] = []
-        async for t in _from_query(
-            mock_client, "app", None, None, None, None, None, None, None
-        ):
+        async for t in _from_query(mock_client, "app"):
             yield_order.append(t.transcript_id)
 
         # t1 is completed after page 2 (absent), t2 after final flush
@@ -647,9 +626,7 @@ class TestFromQueryStreaming:
         mock_client.site = "datadoghq.com"
 
         results: list[Transcript] = []
-        async for t in _from_query(
-            mock_client, "app", None, None, None, None, None, None, None
-        ):
+        async for t in _from_query(mock_client, "app"):
             results.append(t)
 
         ids = {t.transcript_id for t in results}
@@ -677,9 +654,7 @@ class TestFromQueryStreaming:
         mock_client.site = "datadoghq.com"
 
         results: list[Transcript] = []
-        async for t in _from_query(
-            mock_client, "app", None, None, None, None, None, None, None
-        ):
+        async for t in _from_query(mock_client, "app"):
             results.append(t)
 
         # tA is flushed after being absent from pages 2 and 3, then appears
@@ -703,9 +678,7 @@ class TestFromQueryStreaming:
         mock_client.site = "datadoghq.com"
 
         results: list[Transcript] = []
-        async for t in _from_query(
-            mock_client, "app", None, None, None, None, None, None, None
-        ):
+        async for t in _from_query(mock_client, "app"):
             results.append(t)
 
         assert len(results) == 2
@@ -863,13 +836,6 @@ class TestTraceFilterIntegration:
         async for t in _from_query(
             mock_client,
             "app",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
             min_messages=5,
         ):
             results.append(t)
@@ -893,13 +859,6 @@ class TestTraceFilterIntegration:
         async for t in _from_query(
             mock_client,
             "app",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
             exclude_models=["gpt-4"],
         ):
             results.append(t)
@@ -953,12 +912,6 @@ class TestTraceFilterIntegration:
         async for t in _from_query(
             mock_client,
             "app",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
             limit=1,
             min_messages=3,
         ):
@@ -1014,13 +967,6 @@ class TestDeduplicateBy:
         async for t in _from_query(
             mock_client,
             "app",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
             deduplicate_by="session_id",
         ):
             results.append(t)
@@ -1062,13 +1008,6 @@ class TestDeduplicateBy:
         async for t in _from_query(
             mock_client,
             "app",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
             deduplicate_by="session_id",
         ):
             results.append(t)
@@ -1104,13 +1043,6 @@ class TestDeduplicateBy:
         async for t in _from_query(
             mock_client,
             "app",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
             deduplicate_by="session_id",
         ):
             results.append(t)
@@ -1141,13 +1073,6 @@ class TestDeduplicateBy:
         async for t in _from_query(
             mock_client,
             "app",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
             deduplicate_by=None,
         ):
             results.append(t)
@@ -1176,12 +1101,6 @@ class TestDeduplicateBy:
         async for t in _from_query(
             mock_client,
             "app",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
             limit=2,
             deduplicate_by="session_id",
         ):
@@ -1216,13 +1135,6 @@ class TestDeduplicateBy:
         async for t in _from_query(
             mock_client,
             "app",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
             deduplicate_by="session_id",
         ):
             results.append(t)

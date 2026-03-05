@@ -9,6 +9,7 @@ import json
 from logging import getLogger
 from typing import Any
 
+from inspect_ai._util.content import Content
 from inspect_ai.model import ModelOutput
 from inspect_ai.model._chat_message import (
     ChatMessage,
@@ -161,39 +162,58 @@ def _normalize_messages(
         if "tool_calls" in new_msg:
             tool_calls = new_msg["tool_calls"]
             if isinstance(tool_calls, list):
-                normalized_calls = []
-                for tc in tool_calls:
-                    if isinstance(tc, dict):
-                        new_tc = dict(tc)
-                        if "type" not in new_tc:
-                            new_tc["type"] = "function"
-                        if "function" not in new_tc and "name" in new_tc:
-                            args = new_tc.pop("args", None)
-                            raw_arguments = new_tc.pop("arguments", None)
-                            if args is None or args == "" or args == {}:
-                                args = raw_arguments
-                            if isinstance(args, dict):
-                                args = json.dumps(args)
-                            elif args is None or args == "":
-                                args = "{}"
-                            elif not isinstance(args, str):
-                                args = json.dumps(args)
-                            new_tc["function"] = {
-                                "name": new_tc.pop("name"),
-                                "arguments": args,
-                            }
-                        normalized_calls.append(new_tc)
-                new_msg["tool_calls"] = normalized_calls
+                new_msg["tool_calls"] = [
+                    _normalize_tool_call(tc)
+                    for tc in tool_calls
+                    if isinstance(tc, dict)
+                ]
 
         normalized.append(new_msg)
 
     return normalized
 
 
+def _normalize_tool_call(tc: dict[str, Any]) -> dict[str, Any]:
+    """Normalize a single tool call dict to OpenAI format.
+
+    Ensures ``type`` is set and wraps bare ``name``/``args`` into the
+    ``{"function": {"name": ..., "arguments": ...}}`` structure that
+    ``messages_from_openai`` expects.
+
+    Args:
+        tc: Raw tool call dictionary
+
+    Returns:
+        Normalized tool call dictionary
+    """
+    new_tc = dict(tc)
+    if "type" not in new_tc:
+        new_tc["type"] = "function"
+    if "function" not in new_tc and "name" in new_tc:
+        args = new_tc.pop("args", None)
+        raw_arguments = new_tc.pop("arguments", None)
+        if args is None or args == "" or args == {}:
+            args = raw_arguments
+        if isinstance(args, dict):
+            args = json.dumps(args)
+        elif args is None or args == "":
+            args = "{}"
+        elif not isinstance(args, str):
+            args = json.dumps(args)
+        new_tc["function"] = {
+            "name": new_tc.pop("name"),
+            "arguments": args,
+        }
+    return new_tc
+
+
 def _simple_message_conversion(
     messages: list[dict[str, Any]],
 ) -> list[ChatMessage]:
-    """Simple fallback message conversion.
+    """Fallback message conversion when provider-specific converters fail.
+
+    Preserves tool calls as structured ``ToolCall`` objects rather than
+    dropping them silently. Logs a warning so degraded conversion is visible.
 
     Args:
         messages: List of message dictionaries
@@ -201,20 +221,32 @@ def _simple_message_conversion(
     Returns:
         List of ChatMessage objects
     """
+    logger.warning(
+        "Using fallback message conversion; structured content types "
+        "may be less accurate than provider-specific converters"
+    )
     result: list[ChatMessage] = []
     for msg in messages:
         role = msg.get("role", "user")
-        content = str(msg.get("content", ""))
+        content = _convert_content(msg.get("content", ""))
         if role == "system":
             result.append(ChatMessageSystem(content=content))
         elif role == "user":
             result.append(ChatMessageUser(content=content))
         elif role in ("assistant", "model"):
-            result.append(ChatMessageAssistant(content=content))
+            tool_calls = _extract_fallback_tool_calls(msg.get("tool_calls"))
+            result.append(
+                ChatMessageAssistant(
+                    content=content,
+                    tool_calls=tool_calls if tool_calls else None,
+                )
+            )
         elif role == "tool":
+            # Tool messages are always plain text
+            text_content = str(msg.get("content", ""))
             result.append(
                 ChatMessageTool(
-                    content=content,
+                    content=text_content,
                     tool_call_id=msg.get("tool_call_id", ""),
                     function=msg.get("name"),
                 )
@@ -222,6 +254,83 @@ def _simple_message_conversion(
         else:
             logger.warning("Skipping message with unhandled role: %s", role)
     return result
+
+
+def _extract_fallback_tool_calls(
+    tool_calls_raw: Any,
+) -> list[ToolCall]:
+    """Extract tool calls from raw message data in the fallback path.
+
+    Args:
+        tool_calls_raw: Raw tool_calls value from a message dict
+
+    Returns:
+        List of ToolCall objects (empty if none found)
+    """
+    if not tool_calls_raw or not isinstance(tool_calls_raw, list):
+        return []
+
+    tool_calls: list[ToolCall] = []
+    for tc in tool_calls_raw:
+        if not isinstance(tc, dict):
+            continue
+        func = tc.get("function", tc)
+        if not isinstance(func, dict):
+            continue
+        name = str(func.get("name", ""))
+        if not name:
+            continue
+        args_raw = func.get("arguments", "{}")
+        try:
+            args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        except json.JSONDecodeError:
+            args = {}
+        tool_calls.append(
+            ToolCall(
+                id=str(tc.get("id", "")),
+                function=name,
+                arguments=args if isinstance(args, dict) else {},
+                type="function",
+            )
+        )
+    return tool_calls
+
+
+def _convert_content(raw: Any) -> str | list[Content]:
+    """Convert raw message content to the appropriate type.
+
+    Strings pass through directly. Lists of content blocks are converted
+    using inspect_ai's ``content_from_openai`` so that structured types
+    like ``ContentImage`` and ``ContentAudio`` are preserved.
+
+    Args:
+        raw: Content field from a message dict (str, list, or other)
+
+    Returns:
+        Plain string or list of Content objects
+    """
+    if isinstance(raw, str):
+        return raw
+    if isinstance(raw, list):
+        try:
+            from inspect_ai.model._openai import content_from_openai
+
+            parts: list[Content] = []
+            for block in raw:
+                if isinstance(block, dict):
+                    # Datadog dicts match OpenAI format at runtime.
+                    parts.extend(content_from_openai(block))  # type: ignore[arg-type]
+                elif isinstance(block, str):
+                    from inspect_ai._util.content import ContentText
+
+                    parts.append(ContentText(text=block))
+            return parts if parts else ""
+        except Exception:
+            logger.debug(
+                "content_from_openai failed for content list, stringifying",
+                exc_info=True,
+            )
+    return str(raw) if raw else ""
 
 
 async def extract_output(span: dict[str, Any]) -> ModelOutput:
@@ -238,10 +347,11 @@ async def extract_output(span: dict[str, Any]) -> ModelOutput:
     output_data = span.get("output") or {}
     model_name = get_model_name(span) or "unknown"
 
+    output: ModelOutput
     messages_raw = output_data.get("messages")
     if messages_raw and isinstance(messages_raw, list):
         last_msg = messages_raw[-1] if messages_raw else {}
-        content = str(last_msg.get("content", ""))
+        content = _convert_content(last_msg.get("content", ""))
         tool_calls_data = last_msg.get("tool_calls")
 
         if tool_calls_data and isinstance(tool_calls_data, list):
@@ -260,21 +370,11 @@ async def extract_output(span: dict[str, Any]) -> ModelOutput:
             )
         else:
             output = ModelOutput.from_content(model=str(model_name), content=content)
-
-        usage = extract_usage(span)
-        if usage:
-            output.usage = usage
-        return output
-
-    value = output_data.get("value")
-    if value:
+    elif value := output_data.get("value"):
         output = ModelOutput.from_content(model=str(model_name), content=str(value))
-        usage = extract_usage(span)
-        if usage:
-            output.usage = usage
-        return output
+    else:
+        output = ModelOutput.from_content(model=str(model_name), content="")
 
-    output = ModelOutput.from_content(model=str(model_name), content="")
     usage = extract_usage(span)
     if usage:
         output.usage = usage

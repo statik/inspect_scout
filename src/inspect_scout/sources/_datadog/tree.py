@@ -12,9 +12,31 @@ from datetime import datetime, timezone
 from logging import getLogger
 from typing import Any
 
+from .detection import is_llm_span
+
 logger = getLogger(__name__)
 
 DATETIME_MIN_UTC = datetime.min.replace(tzinfo=timezone.utc)
+
+
+def _ms_to_datetime(ms: Any) -> datetime:
+    """Convert millisecond timestamp to datetime.
+
+    The Datadog Export API field is named ``start_ns`` but actually
+    contains milliseconds (13-digit values, not 19-digit nanoseconds).
+
+    Args:
+        ms: Millisecond timestamp (int or None)
+
+    Returns:
+        UTC datetime, or datetime.min (UTC) if conversion fails
+    """
+    if ms is not None:
+        try:
+            return datetime.fromtimestamp(int(ms) / 1e3, tz=timezone.utc)
+        except (ValueError, TypeError, OverflowError):
+            pass
+    return DATETIME_MIN_UTC
 
 
 @dataclass
@@ -34,14 +56,8 @@ class SpanNode:
         return str(parent) if parent else None
 
     @property
-    def start_time(self) -> datetime | None:
-        start_ns = self.span.get("start_ns")
-        if start_ns is not None:
-            try:
-                return datetime.fromtimestamp(int(start_ns) / 1e3, tz=timezone.utc)
-            except (ValueError, TypeError, OverflowError):
-                return None
-        return None
+    def start_time(self) -> datetime:
+        return _ms_to_datetime(self.span.get("start_ns"))
 
     @property
     def trace_id(self) -> str:
@@ -124,6 +140,4 @@ def get_llm_spans(spans: list[dict[str, Any]]) -> list[dict[str, Any]]:
     Returns:
         List of LLM spans
     """
-    from .detection import is_llm_span
-
     return [span for span in spans if is_llm_span(span)]
