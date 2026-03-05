@@ -8,7 +8,7 @@ You can populate a transcript database in a variety of ways depending on where y
 
 1. [Inspect Logs](#inspect-logs): Read transcript data from Inspect eval log files.
 
-2. [Arize Phoenix](#arize-phoenix), [LangSmith](#langsmith), [Logfire](#logfire), and [W&B Weave](#wb-weave): Read transcript data from LLM observability platforms.
+2. [Arize Phoenix](#arize-phoenix), [LangSmith](#langsmith), [Logfire](#logfire), [W&B Weave](#wb-weave), and [Datadog](#datadog): Read transcript data from LLM observability platforms.
 
 3. [Claude Code](#claude-code): Read transcript data from local Claude Code sessions.
 
@@ -266,6 +266,63 @@ Claude Code transcripts are mapped to the database schema as follows:
 | `task_id` | Session slug (conversation summary) |
 | `agent` | `"claude-code"` |
 
+## Datadog
+
+[Datadog LLM Observability](https://www.datadoghq.com/product/llm-observability/) provides monitoring and tracing for LLM applications. Scout can import transcripts from Datadog LLM Observability traces via the [Export API](https://docs.datadoghq.com/llm_observability/setup/api/), using httpx directly with no SDK dependency.
+
+Use the `datadog()` transcript source to import traces. You can filter by `ml_app`, time range, specific trace ID, span kind, or tags:
+
+```python
+from inspect_scout import transcripts_db
+from inspect_scout.sources import datadog
+
+async with transcripts_db("s3://my-transcript-db/") as db:
+    await db.insert(datadog(
+        ml_app="my-llm-app",
+    ))
+```
+
+You can also apply more specific filters:
+
+```python
+from datetime import datetime, timezone
+from inspect_scout import transcripts_db
+from inspect_scout.sources import datadog
+
+async with transcripts_db("s3://my-transcript-db/") as db:
+    # Filter by time range
+    await db.insert(datadog(
+        ml_app="my-llm-app",
+        from_time=datetime(2025, 1, 1, tzinfo=timezone.utc),
+        to_time=datetime(2025, 2, 1, tzinfo=timezone.utc),
+    ))
+
+    # Fetch a specific trace
+    await db.insert(datadog(
+        trace_id="abc123",
+    ))
+
+    # Filter by tags
+    await db.insert(datadog(
+        tags=["env:production", "version:2"],
+        limit=100,
+    ))
+
+    # Skip short conversations and exclude specific models
+    await db.insert(datadog(
+        ml_app="my-llm-app",
+        min_messages=5,
+        exclude_models=["gpt-3.5-turbo"],
+    ))
+```
+
+Client-side filters (`min_messages`, `exclude_models`) are applied after transcript assembly, so they can filter on data not available through the Datadog Export API's query parameters.
+
+::: {.callout-note}
+## Authentication
+
+Set the `DD_API_KEY` and `DD_APP_KEY` environment variables to authenticate with Datadog. Both an API key and an application key are required. Optionally set `DD_SITE` to specify your Datadog region (defaults to `datadoghq.com`). You can create keys from [Datadog Organization Settings](https://app.datadoghq.com/organization-settings/api-keys).
+:::
 
 ## Transcript API
 
